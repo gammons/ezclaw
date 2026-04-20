@@ -1,0 +1,7 @@
+test/
+docs/
+examples/
+bots/
+helm/
+.git/
+*.md
