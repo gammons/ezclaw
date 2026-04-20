@@ -5,6 +5,7 @@ gem "faraday", "~> 2.9"
 gem "slack-ruby-client", "~> 2.3"
 gem "rufus-scheduler", "~> 3.9"
 gem "reline"
+gem "dotenv", "~> 3.1"
 
 group :test do
   gem "minitest", "~> 5.22"
