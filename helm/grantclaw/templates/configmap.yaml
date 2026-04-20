@@ -19,3 +19,25 @@ data:
     {{- $content | nindent 4 }}
   {{- end }}
   {{- end }}
+---
+{{- $toolfiles := .Files.Glob "botfiles/tools/*" }}
+{{- if or $toolfiles .Values.bot.tools }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "grantclaw.fullname" . }}-tools
+  labels:
+    {{- include "grantclaw.labels" . | nindent 4 }}
+data:
+  {{- if $toolfiles }}
+  {{- range $path, $content := $toolfiles }}
+  {{ base $path }}: |
+    {{- $content | toString | nindent 4 }}
+  {{- end }}
+  {{- else }}
+  {{- range $name, $content := .Values.bot.tools }}
+  {{ $name }}: |
+    {{- $content | nindent 4 }}
+  {{- end }}
+  {{- end }}
+{{- end }}
