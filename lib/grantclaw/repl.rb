@@ -18,7 +18,7 @@ module Grantclaw
       puts
 
       loop do
-        input = Readline.readline("> ", true)
+        input = Reline.readline("> ", true)
         break if input.nil? || %w[exit quit].include?(input.strip.downcase)
         next if input.strip.empty?
 
