@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "faraday"
+require "faraday/follow_redirects"
 require "uri"
 
 module Grantclaw
@@ -23,7 +24,7 @@ module Grantclaw
         conn = Faraday.new(url: url) do |f|
           f.options.timeout = 30
           f.options.open_timeout = 10
-          f.response :follow_redirects, limit: 5
+          f.use Faraday::FollowRedirects::Middleware, limit: 5
           f.adapter Faraday.default_adapter
         end
 
