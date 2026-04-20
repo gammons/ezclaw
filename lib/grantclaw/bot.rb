@@ -27,7 +27,8 @@ module Grantclaw
         memory: @memory,
         tool_registry: @registry,
         system_prompt: @config.system_prompt,
-        logger: @logger
+        logger: @logger,
+        max_tool_iterations: @config.max_tool_iterations
       )
 
       @logger.info("bot", "Bot loaded: #{@config.name} | LLM: #{@config.llm['provider']}/#{@config.llm['model']}")

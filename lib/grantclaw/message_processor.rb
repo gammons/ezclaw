@@ -2,14 +2,15 @@
 
 module Grantclaw
   class MessageProcessor
-    MAX_TOOL_ITERATIONS = 10
+    DEFAULT_MAX_TOOL_ITERATIONS = 30
 
-    def initialize(llm:, memory:, tool_registry:, system_prompt:, logger:)
+    def initialize(llm:, memory:, tool_registry:, system_prompt:, logger:, max_tool_iterations: nil)
       @llm = llm
       @memory = memory
       @registry = tool_registry
       @system_prompt = system_prompt
       @logger = logger
+      @max_tool_iterations = max_tool_iterations || DEFAULT_MAX_TOOL_ITERATIONS
     end
 
     # on_status: optional callback proc that receives a status string
@@ -37,8 +38,8 @@ module Grantclaw
           return { role: "assistant", content: response[:content] }
         end
 
-        if iterations >= MAX_TOOL_ITERATIONS
-          @logger.warn("llm", "Hit max tool iterations (#{MAX_TOOL_ITERATIONS}), bailing out")
+        if iterations >= @max_tool_iterations
+          @logger.warn("llm", "Hit max tool iterations (#{@max_tool_iterations}), bailing out")
           on_status&.call(nil)
           return { role: "assistant", content: response[:content] || "I've reached my tool call limit. Here's what I have so far." }
         end

@@ -40,6 +40,10 @@ module Grantclaw
       @yaml.dig("logging", "level") || "info"
     end
 
+    def max_tool_iterations
+      @yaml["max_tool_iterations"]
+    end
+
     def system_prompt
       files = context.fetch("system_files", [])
       files.map { |f| read_bot_file(f) }.join("\n---\n")
