@@ -157,9 +157,10 @@ module Grantclaw
 
           remove_reaction("eyes", channel_id, message_ts)
 
+          formatted = SlackFormatter.markdown_to_mrkdwn(result[:content])
           @web_client.chat_postMessage(
             channel: channel_id,
-            text: result[:content],
+            text: formatted,
             thread_ts: thread_ts
           )
         rescue => e
