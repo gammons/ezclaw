@@ -46,8 +46,22 @@ module Grantclaw
         role = msg[:role] || msg["role"]
         content = msg[:content] || msg["content"]
         tool_call_id = msg[:tool_call_id] || msg["tool_call_id"]
+        tool_calls = msg[:tool_calls] || msg["tool_calls"]
+
         result = { role: role, content: content }
         result[:tool_call_id] = tool_call_id if tool_call_id
+
+        # Preserve tool_calls on assistant messages (OpenAI format)
+        if role == "assistant" && tool_calls&.any?
+          result[:tool_calls] = tool_calls.map { |tc|
+            {
+              id: tc[:id],
+              type: "function",
+              function: { name: tc[:name], arguments: JSON.generate(tc[:arguments]) }
+            }
+          }
+        end
+
         result
       end
 
