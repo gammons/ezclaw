@@ -73,7 +73,11 @@ module Grantclaw
         end
       end
       result = call(**kwargs)
-      result.is_a?(String) ? result : JSON.generate(result)
+      if result.is_a?(String)
+        result.encode("UTF-8", invalid: :replace, undef: :replace, replace: "")
+      else
+        JSON.generate(result)
+      end
     rescue => e
       "Error executing #{self.class.tool_name}: #{e.message}"
     end

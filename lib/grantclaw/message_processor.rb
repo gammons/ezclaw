@@ -50,7 +50,8 @@ module Grantclaw
           @logger.info("tool", "#{tc[:name]}(#{tc[:arguments].inspect})")
           result = @registry.execute(tc[:name], tc[:arguments])
           @logger.info("tool", "#{tc[:name]} -> #{result.to_s[0..200]}")
-          messages << { role: "tool", tool_call_id: tc[:id], content: result.to_s }
+          result_str = result.to_s.encode("UTF-8", invalid: :replace, undef: :replace, replace: "")
+          messages << { role: "tool", tool_call_id: tc[:id], content: result_str }
         end
 
         on_status&.call("Generating response...")
