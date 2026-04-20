@@ -7,8 +7,8 @@ end
 # These will be uncommented as the corresponding files are created in later tasks:
 require_relative "grantclaw/config"
 require_relative "grantclaw/logger"
-# require_relative "grantclaw/llm/base"
-# require_relative "grantclaw/llm/openrouter"
+require_relative "grantclaw/llm/base"
+require_relative "grantclaw/llm/openrouter"
 # require_relative "grantclaw/llm/anthropic"
 # require_relative "grantclaw/llm/custom"
 require_relative "grantclaw/tool"
