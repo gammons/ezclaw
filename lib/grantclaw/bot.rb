@@ -82,6 +82,7 @@ module Grantclaw
       Tools::UpdateMemoryTool.memory = @memory
       registry.register("update_memory", Tools::UpdateMemoryTool)
       registry.register("slack_post", Tools::SlackPostTool)
+      registry.register("web_fetch", Tools::WebFetchTool)
 
       tools_dir = File.join(bot_dir, "tools")
       registry.load_directory(tools_dir)

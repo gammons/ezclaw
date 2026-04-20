@@ -2,6 +2,7 @@
 source "https://rubygems.org"
 
 gem "faraday", "~> 2.9"
+gem "faraday-follow_redirects", "~> 0.3"
 gem "slack-ruby-client", "~> 2.3"
 gem "faye-websocket", "~> 0.11"
 gem "eventmachine", "~> 1.2"
