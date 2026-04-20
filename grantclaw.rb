@@ -1,6 +1,9 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
+$stdout.sync = true
+$stderr.sync = true
+
 require "dotenv/load"
 require_relative "lib/grantclaw"
 require "optparse"
