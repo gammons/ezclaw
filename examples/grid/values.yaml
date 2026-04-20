@@ -1,0 +1,329 @@
+# OpenClaw Helm Chart Values - Grid (DevOps / SRE)
+#
+# IMPORTANT ARCHITECTURE NOTES:
+# - OpenClaw is NOT horizontally scalable
+# - Deploy as a SINGLE INSTANCE only
+# - Do NOT increase replica count
+#
+# Grid needs kubectl for cluster monitoring and investigation.
+# Medium-heavy resources for log processing and metric analysis.
+
+app-template:
+  openclawVersion: "2026.4.14"
+  configMode: overwrite
+
+  serviceAccount:
+    openclaw:
+      enabled: true
+
+  defaultPodOptions:
+    securityContext:
+      fsGroup: 1000
+      fsGroupChangePolicy: OnRootMismatch
+
+  controllers:
+    main:
+      replicas: 1
+      serviceAccount:
+        identifier: openclaw
+
+      initContainers:
+        init-skills:
+          image:
+            repository: ghcr.io/openclaw/openclaw
+            tag: "{{ .Values.openclawVersion }}"
+          command:
+            - sh
+            - -c
+            - |
+              mkdir -p /home/node/.openclaw/workspace/skills
+              mkdir -p /home/node/.openclaw/bin
+              # Copy shared workspace files
+              cp /shared-workspace/*.md /home/node/.openclaw/workspace/ 2>/dev/null || true
+              # Copy bot-specific workspace files
+              cp /bot-workspace/*.md /home/node/.openclaw/workspace/ 2>/dev/null || true
+
+              # Install kubectl
+              if [ ! -f /home/node/.openclaw/bin/kubectl ]; then
+                echo "Installing kubectl..."
+                ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+                curl -LsSo /home/node/.openclaw/bin/kubectl \
+                  "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/${ARCH}/kubectl"
+                chmod +x /home/node/.openclaw/bin/kubectl
+              fi
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+
+      containers:
+        main:
+          image:
+            repository: ghcr.io/openclaw/openclaw
+            tag: "{{ .Values.openclawVersion }}"
+            pullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              apt-get update && apt-get install -y --no-install-recommends vim \
+                && rm -rf /var/lib/apt/lists/*
+              exec node dist/index.js gateway --bind lan --port 18789
+          env:
+            HOME: /home/node
+            NODE_OPTIONS: "--max-old-space-size=3072"
+            PATH: /home/node/.openclaw/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+            KUBECONFIG: /home/node/.openclaw/.kube/config
+          envFrom:
+            - secretRef:
+                name: openclaw-grid-env
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            readOnlyRootFilesystem: false
+            allowPrivilegeEscalation: true
+            capabilities:
+              drop: []
+          resources:
+            requests:
+              cpu: 400m
+              memory: 768Mi
+            limits:
+              cpu: 3000m
+              memory: 4Gi
+          probes:
+            liveness:
+              enabled: true
+              type: TCP
+              spec:
+                tcpSocket:
+                  port: 18789
+                initialDelaySeconds: 30
+                periodSeconds: 30
+                timeoutSeconds: 5
+                failureThreshold: 3
+            readiness:
+              enabled: true
+              type: TCP
+              spec:
+                tcpSocket:
+                  port: 18789
+                initialDelaySeconds: 10
+                periodSeconds: 10
+                timeoutSeconds: 5
+                failureThreshold: 3
+            startup:
+              enabled: true
+              type: TCP
+              spec:
+                tcpSocket:
+                  port: 18789
+                initialDelaySeconds: 5
+                periodSeconds: 5
+                timeoutSeconds: 5
+                failureThreshold: 30
+
+  configMaps:
+    config:
+      enabled: true
+      data:
+        openclaw.json: |
+          {
+            "auth": {
+              "profiles": {
+                "anthropic:default": {
+                  "provider": "anthropic",
+                  "mode": "token"
+                }
+              }
+            },
+            "models": {
+              "providers": {
+                "zai": {
+                  "baseUrl": "https://api.z.ai/api/anthropic",
+                  "models": [{ "id": "glm-5-turbo", "name": "GLM-5-Turbo", "reasoning": true, "input": ["text"], "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }, "contextWindow": 204800, "maxTokens": 131072 }],
+                  "apiKey": "${ZAI_API_KEY}"
+                }
+              }
+            },
+            "agents": {
+              "defaults": {
+                "model": { "primary": "zai/glm-5-turbo" },
+                "workspace": "/home/node/.openclaw/workspace",
+                "compaction": {
+                  "mode": "safeguard"
+                },
+                "maxConcurrent": 4,
+                "subagents": {
+                  "maxConcurrent": 8
+                },
+                "heartbeat": {
+                  "every": "10m",
+                  "target": "last",
+                  "isolatedSession": true,
+                  "lightContext": true
+                }
+              }
+            },
+            "messages": {
+              "ackReactionScope": "group-mentions"
+            },
+            "commands": {
+              "native": "auto",
+              "nativeSkills": "auto"
+            },
+            "hooks": {
+              "internal": {
+                "enabled": true,
+                "entries": {
+                  "boot-md": {
+                    "enabled": true
+                  },
+                  "command-logger": {
+                    "enabled": true
+                  },
+                  "session-memory": {
+                    "enabled": true
+                  }
+                }
+              }
+            },
+            "channels": {
+              "slack": {
+                "mode": "socket",
+                "webhookPath": "/slack/events",
+                "enabled": true,
+                "requireMention": true,
+                "replyToModeByChatType": { "channel": "all", "direct": "all" },
+                "botToken": "${SLACK_BOT_TOKEN}",
+                "appToken": "${SLACK_APP_TOKEN}",
+                "userTokenReadOnly": true,
+                "groupPolicy": "open",
+                "actions": {
+                  "reactions": true,
+                  "messages": true,
+                  "pins": true,
+                  "memberInfo": true,
+                  "emojiList": true
+                },
+                "dm": {
+                  "groupEnabled": true,
+                  "policy": "open",
+                  "allowFrom": ["*"],
+                  "groupChannels": ["*"]
+                },
+                "channels": {
+                  "C0AQS7PN3EF": { "allow": true, "requireMention": true, "allowBots": true },
+                  "C054Q9GQYER": { "allow": true, "requireMention": true }
+                }
+              }
+            },
+            "browser": {
+              "enabled": true,
+              "defaultProfile": "openclaw",
+              "profiles": {
+                "openclaw": {
+                  "cdpUrl": "http://127.0.0.1:9222",
+                  "color": "#00AA00"
+                }
+              }
+            },
+            "gateway": {
+              "port": 18789,
+              "mode": "local",
+              "auth": {
+                "mode": "token",
+                "token": "${GATEWAY_TOKEN}"
+              },
+              "controlUi": {
+                "dangerouslyAllowHostHeaderOriginFallback": true
+              }
+            },
+            "skills": {
+              "install": {
+                "nodeManager": "pnpm"
+              }
+            },
+            "plugins": {
+              "entries": {
+                "slack": {
+                  "enabled": true
+                }
+              }
+            }
+          }
+
+  service:
+    main:
+      controller: main
+      ipFamilyPolicy: SingleStack
+      ipFamilies:
+        - IPv4
+      ports:
+        http:
+          port: 18789
+
+  ingress:
+    main:
+      enabled: false
+
+  persistence:
+    tmp:
+      enabled: true
+      type: emptyDir
+      advancedMounts:
+        main:
+          init-config:
+            - path: /tmp
+          init-skills:
+            - path: /tmp
+          main:
+            - path: /tmp
+
+    config:
+      enabled: true
+      type: configMap
+      identifier: config
+      advancedMounts:
+        main:
+          init-config:
+            - path: /config
+              readOnly: true
+
+    shared-workspace:
+      enabled: true
+      type: configMap
+      name: openclaw-shared-workspace
+      advancedMounts:
+        main:
+          init-skills:
+            - path: /shared-workspace
+              readOnly: true
+
+    bot-workspace:
+      enabled: true
+      type: configMap
+      name: openclaw-grid-workspace
+      advancedMounts:
+        main:
+          init-skills:
+            - path: /bot-workspace
+              readOnly: true
+
+    data:
+      enabled: true
+      type: persistentVolumeClaim
+      accessMode: ReadWriteOnce
+      size: 15Gi
+      advancedMounts:
+        main:
+          init-config:
+            - path: /home/node/.openclaw
+          init-skills:
+            - path: /home/node/.openclaw
+          main:
+            - path: /home/node/.openclaw

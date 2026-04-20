@@ -34,3 +34,46 @@ resources:
 
 persistence:
   size: 1Gi
+
+# --- Optional extensions for bots that need extra system tools ---
+
+# ServiceAccount for RBAC (e.g., kubectl access)
+serviceAccount:
+  create: false
+  name: ""
+  annotations: {}
+
+# Extra environment variables
+extraEnv: []
+  # - name: KUBECONFIG
+  #   value: /home/grantclaw/.kube/config
+
+# Extra volume mounts for the main container
+extraVolumeMounts: []
+  # - name: kubeconfig
+  #   mountPath: /home/grantclaw/.kube
+  #   readOnly: true
+
+# Extra volumes
+extraVolumes: []
+  # - name: kubeconfig
+  #   secret:
+  #     secretName: grid-kubeconfig
+
+# Init container to install extra tools (e.g., kubectl)
+initContainers: []
+  # - name: install-kubectl
+  #   image: ghcr.io/grantclaw/grantclaw:latest
+  #   command:
+  #     - sh
+  #     - -c
+  #     - |
+  #       if [ ! -f /tools/kubectl ]; then
+  #         ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+  #         curl -LsSo /tools/kubectl \
+  #           "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/${ARCH}/kubectl"
+  #         chmod +x /tools/kubectl
+  #       fi
+  #   volumeMounts:
+  #     - name: tools
+  #       mountPath: /tools

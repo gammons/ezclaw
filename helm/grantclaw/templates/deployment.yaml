@@ -19,6 +19,13 @@ spec:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
+      {{- if .Values.serviceAccount.create }}
+      serviceAccountName: {{ .Values.serviceAccount.name | default (include "grantclaw.fullname" .) }}
+      {{- end }}
+      {{- if .Values.initContainers }}
+      initContainers:
+        {{- toYaml .Values.initContainers | nindent 8 }}
+      {{- end }}
       containers:
         - name: grantclaw
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -31,6 +38,9 @@ spec:
           env:
             - name: GRANTCLAW_DATA_DIR
               value: /data
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
@@ -39,6 +49,9 @@ spec:
               readOnly: true
             - name: data
               mountPath: /data
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           livenessProbe:
             exec:
               command: ["ruby", "-e", "exit 0"]
@@ -54,3 +67,6 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: {{ include "grantclaw.fullname" . }}-data
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
