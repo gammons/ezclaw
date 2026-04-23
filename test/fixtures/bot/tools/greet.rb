@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-class FixtureGreetTool < Grantclaw::Tool
+class FixtureGreetTool < Ezclaw::Tool
   desc "Greet someone"
   param :name, type: :string, required: true
 

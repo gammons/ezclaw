@@ -2,7 +2,7 @@
 
 require "minitest/autorun"
 require "webmock/minitest"
-require_relative "../lib/grantclaw"
+require_relative "../lib/ezclaw"
 
 # Fixtures directory
 FIXTURES_DIR = File.join(__dir__, "fixtures")

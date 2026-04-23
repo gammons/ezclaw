@@ -1,10 +1,10 @@
-# Grantclaw
+# Ezclaw
 
 A simple Ruby bot framework for running LLM-powered agents with Slack integration and cron scheduling. Built as a lightweight alternative to OpenClaw — easier to understand, debug, and deploy.
 
 ## What it does
 
-Grantclaw runs a single bot per process. Each bot:
+Ezclaw runs a single bot per process. Each bot:
 
 - Connects to Slack via Socket Mode and responds to messages
 - Runs scheduled tasks (heartbeats, reports) via internal cron
@@ -22,7 +22,7 @@ Grantclaw runs a single bot per process. Each bot:
 ### Install
 
 ```bash
-git clone <repo-url> && cd grantclaw
+git clone <repo-url> && cd ezclaw
 bundle install
 ```
 
@@ -40,13 +40,13 @@ SLACK_APP_TOKEN=xapp-...      # optional
 
 ```bash
 # Interactive REPL (no Slack, no cron — for testing)
-ruby grantclaw.rb --bot bots/pulse --repl
+ruby ezclaw.rb --bot bots/pulse --repl
 
 # Production (Slack + cron)
-ruby grantclaw.rb --bot bots/pulse
+ruby ezclaw.rb --bot bots/pulse
 
 # Dry run (trigger each schedule once, print output, exit)
-ruby grantclaw.rb --bot bots/pulse --dry
+ruby ezclaw.rb --bot bots/pulse --dry
 ```
 
 ## Creating a bot
@@ -103,7 +103,7 @@ logging:
 Tools are Ruby classes in the `tools/` directory:
 
 ```ruby
-class StripeTool < Grantclaw::Tool
+class StripeTool < Ezclaw::Tool
   desc "Check Stripe MRR and subscription metrics"
   param :metric, type: :string, enum: %w[mrr churn subscriptions], required: true
 
@@ -114,7 +114,7 @@ class StripeTool < Grantclaw::Tool
 end
 ```
 
-Tools are auto-discovered from the `tools/` directory. Any class inheriting from `Grantclaw::Tool` is registered automatically.
+Tools are auto-discovered from the `tools/` directory. Any class inheriting from `Ezclaw::Tool` is registered automatically.
 
 ## Built-in tools
 
@@ -131,7 +131,7 @@ Every bot gets these tools automatically:
 
 ```
 +----------------------------------------------+
-|              Grantclaw Process               |
+|              Ezclaw Process               |
 |                                              |
 |  +-------------+     +------------------+    |
 |  | Slack Socket |---->|                  |    |
@@ -172,7 +172,7 @@ The bot can update its own memory via the `update_memory` tool. Memory is stored
 ### Docker
 
 ```bash
-docker build -t grantclaw .
+docker build -t ezclaw .
 ```
 
 The image is generic — bot config is injected via ConfigMaps.
@@ -180,16 +180,16 @@ The image is generic — bot config is injected via ConfigMaps.
 ### Helm
 
 ```bash
-helm install pulse ./helm/grantclaw -f my-pulse-values.yaml
+helm install pulse ./helm/ezclaw -f my-pulse-values.yaml
 ```
 
-The chart generates a ConfigMap (bot config + files), a PVC (writable state), and a single-replica Deployment. See `helm/grantclaw/values.yaml` for the full schema.
+The chart generates a ConfigMap (bot config + files), a PVC (writable state), and a single-replica Deployment. See `helm/ezclaw/values.yaml` for the full schema.
 
 Example values for deploying a bot:
 
 ```yaml
 image:
-  repository: ghcr.io/youruser/grantclaw
+  repository: ghcr.io/youruser/ezclaw
   tag: latest
 
 bot:
@@ -217,7 +217,7 @@ bot:
       ...
 
 secrets:
-  existingSecret: grantclaw-pulse-env  # contains API keys
+  existingSecret: ezclaw-pulse-env  # contains API keys
 
 resources:
   requests: { cpu: 100m, memory: 128Mi }
@@ -235,7 +235,7 @@ Here's how to deploy a bot with kubectl access:
 
 ```yaml
 image:
-  repository: ghcr.io/youruser/grantclaw
+  repository: ghcr.io/youruser/ezclaw
   tag: latest
 
 bot:
@@ -262,7 +262,7 @@ bot:
       ...
 
 secrets:
-  existingSecret: grantclaw-grid-env
+  existingSecret: ezclaw-grid-env
 
 resources:
   requests: { cpu: 400m, memory: 768Mi }
@@ -278,14 +278,14 @@ serviceAccount:
 # Make kubectl available on PATH and point to kubeconfig
 extraEnv:
   - name: KUBECONFIG
-    value: /home/grantclaw/.kube/config
+    value: /home/ezclaw/.kube/config
   - name: PATH
     value: /tools:/usr/local/bundle/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # Mount kubeconfig from a secret + shared tools directory
 extraVolumeMounts:
   - name: kubeconfig
-    mountPath: /home/grantclaw/.kube
+    mountPath: /home/ezclaw/.kube
     readOnly: true
   - name: tools
     mountPath: /tools
@@ -300,7 +300,7 @@ extraVolumes:
 # Download kubectl at pod startup
 initContainers:
   - name: install-kubectl
-    image: ghcr.io/youruser/grantclaw:latest
+    image: ghcr.io/youruser/ezclaw:latest
     command:
       - sh
       - -c
@@ -343,10 +343,10 @@ Your Slack app needs:
 ## Project structure
 
 ```
-grantclaw.rb              # CLI entry point
+ezclaw.rb              # CLI entry point
 lib/
-  grantclaw.rb            # Module root
-  grantclaw/
+  ezclaw.rb            # Module root
+  ezclaw/
     bot.rb                # Wires all components together
     config.rb             # Loads bot config directory
     logger.rb             # Structured logging
@@ -367,7 +367,7 @@ lib/
       slack_post.rb       # Built-in: post to Slack
       web_fetch.rb        # Built-in: HTTP requests
       shell_exec.rb       # Built-in: shell command execution
-helm/grantclaw/           # Minimal Helm chart
+helm/ezclaw/           # Minimal Helm chart
 bots/pulse/               # Example bot configuration
 test/                     # Minitest test suite
 ```

@@ -1,6 +1,0 @@
-apiVersion: v2
-name: grantclaw
-description: A simple Ruby AI bot framework
-type: application
-version: 0.1.0
-appVersion: "0.1.0"

@@ -15,10 +15,10 @@ RUN bundle install && \
     rm -rf /usr/local/bundle/cache/*.gem
 
 COPY lib/ lib/
-COPY grantclaw.rb .
+COPY ezclaw.rb .
 
-RUN useradd -m -s /bin/bash grantclaw
-USER grantclaw
+RUN useradd -m -s /bin/bash ezclaw
+USER ezclaw
 
-ENTRYPOINT ["ruby", "grantclaw.rb"]
+ENTRYPOINT ["ruby", "ezclaw.rb"]
 CMD ["--bot", "/config", "--data", "/data"]

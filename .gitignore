@@ -1,9 +1,9 @@
 .env
-helm/grantclaw/botfiles/*
-!helm/grantclaw/botfiles/.gitkeep
-!helm/grantclaw/botfiles/tools/
-!helm/grantclaw/botfiles/docs/
-helm/grantclaw/botfiles/tools/*
-helm/grantclaw/botfiles/docs/*
-!helm/grantclaw/botfiles/tools/.gitkeep
-!helm/grantclaw/botfiles/docs/.gitkeep
+helm/ezclaw/botfiles/*
+!helm/ezclaw/botfiles/.gitkeep
+!helm/ezclaw/botfiles/tools/
+!helm/ezclaw/botfiles/docs/
+helm/ezclaw/botfiles/tools/*
+helm/ezclaw/botfiles/docs/*
+!helm/ezclaw/botfiles/tools/.gitkeep
+!helm/ezclaw/botfiles/docs/.gitkeep
