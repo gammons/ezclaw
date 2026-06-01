@@ -231,6 +231,15 @@ module Ezclaw
       thread_ts = event["thread_ts"] || event["ts"]
       is_dm = event["channel_type"] == "im"
 
+      # Slack delivers BOTH a `message` event AND an `app_mention` event for
+      # every channel @mention of the bot. Drop the `message` copy so we
+      # process each mention exactly once. DMs are NOT subject to this —
+      # Slack does not fire `app_mention` in DMs, so the `message` event is
+      # the only copy and must be processed. Channel messages that don't
+      # mention the bot (thread replies, etc.) also have no `app_mention`
+      # twin and must continue to flow through.
+      return if type == "message" && !is_dm && mentioned?(text)
+
       return unless allowed_channel?(channel_id, is_dm)
 
       if requires_mention?(channel_id, is_dm) && !mentioned?(text)

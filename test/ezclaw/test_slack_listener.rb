@@ -111,4 +111,117 @@ class TestSlackListener < Minitest::Test
     listener.send(:clear_reconnect_pending)
     assert_equal :scheduled, listener.send(:schedule_reconnect, :test) { :ran }
   end
+
+  # --- handle_event: dedupe `message` vs `app_mention` for channel mentions ---
+  #
+  # Slack delivers BOTH a `message` event AND an `app_mention` event for every
+  # channel @mention of the bot. Without a gate, the bot processes the same
+  # user input twice — sending two replies and performing tool actions twice.
+  # See: https://api.slack.com/events/app_mention
+
+  BOT_USER_ID = "U0BOTID"
+  CHANNEL_ID = "C0CHAN"
+
+  def build_channel_listener
+    listener = build_listener
+    def @config.slack
+      {
+        "channels" => [
+          { "id" => "C0CHAN", "name" => "test", "require_mention" => true }
+        ],
+        "dm_policy" => "open"
+      }
+    end
+    listener.instance_variable_set(:@bot_user_id, BOT_USER_ID)
+    # Stub processor so the background Thread.new in handle_event has something
+    # benign to call. The log line we assert on is emitted synchronously
+    # BEFORE the thread is spawned, so the thread's behavior doesn't affect
+    # the assertion outcome — but the stub keeps stderr clean.
+    processor = Object.new
+    def processor.process(**)
+      { content: "" }
+    end
+    listener.instance_variable_set(:@processor, processor)
+    # Stub web client so reactions/messages from the background thread don't
+    # raise loudly. All methods become no-ops returning nil.
+    web = Object.new
+    def web.method_missing(*) ; nil; end
+    def web.respond_to_missing?(*) ; true; end
+    listener.instance_variable_set(:@web_client, web)
+    listener
+  end
+
+  def channel_mention_message_event
+    {
+      "type" => "message",
+      "user" => "U0HUMAN",
+      "channel" => CHANNEL_ID,
+      "channel_type" => "channel",
+      "text" => "<@#{BOT_USER_ID}> please do the thing",
+      "ts" => "1700000000.000100"
+    }
+  end
+
+  def channel_app_mention_event
+    {
+      "type" => "app_mention",
+      "user" => "U0HUMAN",
+      "channel" => CHANNEL_ID,
+      "text" => "<@#{BOT_USER_ID}> please do the thing",
+      "ts" => "1700000000.000100"
+    }
+  end
+
+  def test_skips_message_event_when_bot_is_mentioned_in_channel
+    # Slack will ALSO deliver an `app_mention` event for the same user input.
+    # The `message` copy must be skipped to avoid double-processing.
+    listener = build_channel_listener
+    listener.send(:handle_event, channel_mention_message_event)
+    refute_match(
+      /Message from/, @output.string,
+      "Expected `message` event with bot @mention in channel to be skipped " \
+      "(app_mention will fire too), but it was processed."
+    )
+  end
+
+  def test_processes_app_mention_event_in_channel
+    listener = build_channel_listener
+    listener.send(:handle_event, channel_app_mention_event)
+    assert_match(/Message from U0HUMAN in #{CHANNEL_ID}/, @output.string,
+                 "Expected `app_mention` event to be processed.")
+  end
+
+  def test_processes_message_event_in_dm_even_with_mention_token
+    # DMs only fire `message` events (Slack does NOT fire `app_mention` in
+    # DMs), so we must process the `message` copy here.
+    listener = build_channel_listener
+    dm_event = channel_mention_message_event.merge(
+      "channel" => "D0DM", "channel_type" => "im"
+    )
+    listener.send(:handle_event, dm_event)
+    assert_match(/Message from U0HUMAN/, @output.string,
+                 "Expected DM `message` event to be processed.")
+  end
+
+  def test_processes_message_event_in_channel_without_mention_falls_through
+    # Plain channel message that doesn't mention the bot: app_mention does NOT
+    # fire, so the `message` event is the ONLY copy. We must process it
+    # (subject to the existing thread-ownership / require_mention rules).
+    listener = build_channel_listener
+    # Allow the channel without requiring mention so handle_event proceeds.
+    def @config.slack
+      {
+        "channels" => [
+          { "id" => "C0CHAN", "name" => "test", "require_mention" => false }
+        ],
+        "dm_policy" => "open"
+      }
+    end
+    plain_event = channel_mention_message_event.merge(
+      "text" => "hey team, status check"
+    )
+    listener.send(:handle_event, plain_event)
+    assert_match(/Message from U0HUMAN/, @output.string,
+                 "Expected non-mentioning `message` event to be processed.")
+  end
 end
