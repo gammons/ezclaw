@@ -5,14 +5,17 @@ require "tmpdir"
 
 class FakeLLM < Ezclaw::LLM::Base
   attr_accessor :responses
+  attr_reader :last_messages
 
   def initialize
     super(model: "fake", max_tokens: 100)
     @responses = []
     @call_count = 0
+    @last_messages = nil
   end
 
   def chat(messages:, tools: [], model: nil)
+    @last_messages = messages
     resp = @responses[@call_count] || { role: "assistant", content: "default response", tool_calls: nil }
     @call_count += 1
     resp
@@ -79,6 +82,42 @@ class TestMessageProcessor < Minitest::Test
     ]
     result = @processor.process(user_message: "Follow up", conversation_history: history)
     assert_equal "I see the context.", result[:content]
+  end
+
+  def test_user_message_is_plain_string_when_no_images
+    @llm.responses = [{ role: "assistant", content: "ok", tool_calls: nil }]
+    @processor.process(user_message: "Hi")
+    user_msg = @llm.last_messages.last
+    assert_equal "user", user_msg[:role]
+    assert_equal "Hi", user_msg[:content]
+  end
+
+  def test_images_produce_multimodal_user_content
+    @llm.responses = [{ role: "assistant", content: "I see it", tool_calls: nil }]
+    images = [{ type: "image", media_type: "image/png", data: "QUJD" }]
+    @processor.process(user_message: "what is this?", images: images)
+
+    user_msg = @llm.last_messages.last
+    assert_equal "user", user_msg[:role]
+    assert_equal(
+      [
+        { type: "text", text: "what is this?" },
+        { type: "image", media_type: "image/png", data: "QUJD" }
+      ],
+      user_msg[:content]
+    )
+  end
+
+  def test_image_only_message_omits_empty_text_block
+    @llm.responses = [{ role: "assistant", content: "I see it", tool_calls: nil }]
+    images = [{ type: "image", media_type: "image/jpeg", data: "ZZZ" }]
+    @processor.process(user_message: "", images: images)
+
+    user_msg = @llm.last_messages.last
+    assert_equal(
+      [{ type: "image", media_type: "image/jpeg", data: "ZZZ" }],
+      user_msg[:content]
+    )
   end
 
   def test_max_tool_iterations

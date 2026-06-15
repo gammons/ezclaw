@@ -20,6 +20,14 @@ module Ezclaw
     # How long to wait before reconnecting after a close/error (seconds).
     RECONNECT_DELAY_SECONDS = 5
 
+    # Slack file mimetypes we forward to the LLM as images. Limited to the
+    # formats the Anthropic/OpenAI vision APIs accept.
+    SUPPORTED_IMAGE_MIMETYPES = %w[image/png image/jpeg image/gif image/webp].freeze
+
+    # Skip images larger than this (bytes). Anthropic rejects images above ~5MB
+    # of base64, so we guard on the raw size Slack reports.
+    MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
     # watchdog_seconds: how long to wait between Slack events before forcing a
     # reconnect. Default 1800 (30 min). The 90s default we shipped originally
     # was too aggressive — Slack's Socket Mode is intentionally idle during
@@ -257,9 +265,14 @@ module Ezclaw
       end
 
       clean_text = text.gsub(/<@#{@bot_user_id}>/, "").strip
-      return if clean_text.empty?
 
-      @logger.info("slack", "Message from #{event['user']} in #{channel_id}: #{clean_text[0..80]}")
+      # Detect image attachments cheaply (no network) so we know whether an
+      # image-only message should still be processed. The actual download
+      # happens in the background thread below to avoid blocking the reactor.
+      img_files = image_files(event)
+      return if clean_text.empty? && img_files.empty?
+
+      @logger.info("slack", "Message from #{event['user']} in #{channel_id}: #{clean_text[0..80]}#{img_files.empty? ? '' : " [#{img_files.length} image(s)]"}")
 
       # Process in a thread to not block the EventMachine reactor
       message_ts = event["ts"]
@@ -270,11 +283,13 @@ module Ezclaw
         status_cb = ->(status) { set_thread_status(channel_id, thread_ts, status) }
 
         history = fetch_thread_history(channel_id, thread_ts, message_ts)
+        images = img_files.map { |f| download_image(f) }.compact
 
         begin
           result = @processor.process(
             user_message: clean_text,
             conversation_history: history,
+            images: images,
             source: "slack",
             on_status: status_cb
           )
@@ -391,12 +406,69 @@ module Ezclaw
           .reject { |m| m["ts"] == current_ts }
           .map { |m|
             role = m["user"] == @bot_user_id ? "assistant" : "user"
-            { role: role, content: m["text"] || "" }
+            text = m["text"] || ""
+            images = image_files(m).map { |f| download_image(f) }.compact
+            content = if images.any?
+              blocks = []
+              blocks << { type: "text", text: text } unless text.strip.empty?
+              blocks.concat(images)
+              blocks
+            else
+              text
+            end
+            { role: role, content: content }
           }
       rescue => e
         @logger.warn("slack", "Could not fetch thread history: #{e.message}")
         []
       end
+    end
+
+    # Returns the subset of a Slack event's `files` that are images we can
+    # forward to the LLM. Cheap — no network, just mimetype/size filtering.
+    def image_files(event)
+      files = event["files"]
+      return [] unless files.is_a?(Array)
+
+      files.select do |f|
+        SUPPORTED_IMAGE_MIMETYPES.include?(f["mimetype"]) &&
+          (f["size"].nil? || f["size"] <= MAX_IMAGE_BYTES)
+      end
+    end
+
+    # Downloads a Slack file's bytes (authenticated, since url_private requires
+    # the bot token) and returns a normalized image block, or nil on failure.
+    def download_image(file)
+      url = file["url_private_download"] || file["url_private"]
+      return nil unless url
+
+      uri = URI(url)
+      req = Net::HTTP::Get.new(uri)
+      req["Authorization"] = "Bearer #{ENV.fetch('SLACK_BOT_TOKEN')}"
+
+      http = Net::HTTP.new(uri.host, uri.port)
+      http.use_ssl = (uri.scheme == "https")
+      response = http.request(req)
+
+      unless response.is_a?(Net::HTTPSuccess)
+        @logger.warn("slack", "Could not download image #{file['id']}: HTTP #{response.code}")
+        return nil
+      end
+
+      body = response.body
+      if body.bytesize > MAX_IMAGE_BYTES
+        @logger.warn("slack", "Skipping image #{file['id']}: #{body.bytesize} bytes exceeds limit")
+        return nil
+      end
+
+      {
+        type: "image",
+        media_type: file["mimetype"],
+        data: [body].pack("m0")
+      }
+    rescue => e
+      @logger.warn("slack", "Error downloading image #{file['id']}: #{e.class}: #{e.message}")
+      nil
     end
   end
 end

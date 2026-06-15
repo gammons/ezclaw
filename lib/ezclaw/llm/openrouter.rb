@@ -50,7 +50,7 @@ module Ezclaw
         tool_call_id = msg[:tool_call_id] || msg["tool_call_id"]
         tool_calls = msg[:tool_calls] || msg["tool_calls"]
 
-        result = { role: role, content: content }
+        result = { role: role, content: openai_content(content) }
         result[:tool_call_id] = tool_call_id if tool_call_id
 
         # Preserve tool_calls on assistant messages (OpenAI format)
@@ -65,6 +65,31 @@ module Ezclaw
         end
 
         result
+      end
+
+      # Translates normalized content into OpenAI's chat format. A plain String
+      # passes through unchanged; an array of normalized blocks (text/image) is
+      # mapped to OpenAI multimodal parts, encoding our internal image
+      # representation as a base64 data URI under image_url.
+      def openai_content(content)
+        return content unless content.is_a?(Array)
+
+        content.map do |block|
+          type = block[:type] || block["type"]
+          case type
+          when "image"
+            media_type = block[:media_type] || block["media_type"]
+            data = block[:data] || block["data"]
+            {
+              type: "image_url",
+              image_url: { url: "data:#{media_type};base64,#{data}" }
+            }
+          when "text"
+            { type: "text", text: block[:text] || block["text"] }
+          else
+            block
+          end
+        end
       end
 
       def openai_tool(tool)
