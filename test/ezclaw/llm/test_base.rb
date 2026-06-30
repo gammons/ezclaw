@@ -24,3 +24,61 @@ class TestLLMBaseAPIError < Minitest::Test
     assert_equal "boom", Ezclaw::LLM::APIError.new("boom", status: 500).message
   end
 end
+
+class TestLLMBaseRetries < Minitest::Test
+  # Test double: exposes with_retries, records sleeps, removes jitter for
+  # deterministic assertions.
+  class Retryable < Ezclaw::LLM::Base
+    attr_reader :slept
+
+    def initialize
+      super(model: "fake", max_tokens: 1)
+      @slept = []
+    end
+
+    def jitter(seconds) = seconds          # disable jitter in tests
+    def sleep_for(seconds) = @slept << seconds
+
+    def run(interactive:, &blk)
+      with_retries(interactive: interactive, &blk)
+    end
+  end
+
+  def transient = Ezclaw::LLM::APIError.new("HTTP 529: overloaded", status: 529)
+
+  def test_interactive_uses_short_backoff
+    r = Retryable.new
+    assert_raises(Ezclaw::LLM::APIError) do
+      r.run(interactive: true) { raise transient }
+    end
+    assert_equal [0.2, 0.4], r.slept
+  end
+
+  def test_unattended_uses_aggressive_backoff
+    r = Retryable.new
+    assert_raises(Ezclaw::LLM::APIError) do
+      r.run(interactive: false) { raise transient }
+    end
+    assert_equal [5, 15, 30, 60], r.slept
+  end
+
+  def test_retries_then_succeeds
+    r = Retryable.new
+    calls = 0
+    result = r.run(interactive: false) do
+      calls += 1
+      raise transient if calls < 3
+      :ok
+    end
+    assert_equal :ok, result
+    assert_equal [5, 15], r.slept  # two failures -> two sleeps
+  end
+
+  def test_non_transient_is_not_retried
+    r = Retryable.new
+    assert_raises(Ezclaw::LLM::APIError) do
+      r.run(interactive: false) { raise Ezclaw::LLM::APIError.new("HTTP 400: bad", status: 400) }
+    end
+    assert_equal [], r.slept
+  end
+end

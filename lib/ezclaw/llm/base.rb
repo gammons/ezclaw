@@ -22,7 +22,12 @@ module Ezclaw
     end
 
     class Base
-      MAX_RETRIES = 3
+      # Interactive: a human is waiting — fail fast (2 retries, sub-second).
+      INTERACTIVE_BACKOFF = [0.2, 0.4].freeze
+      # Unattended (cron/heartbeat): nobody is waiting — ride out transient
+      # upstream overloads (4 retries, ~110s cumulative).
+      UNATTENDED_BACKOFF = [5, 15, 30, 60].freeze
+      JITTER_RATIO = 0.2
 
       def initialize(model:, max_tokens: 4096)
         @model = model
@@ -35,16 +40,29 @@ module Ezclaw
 
       private
 
-      def with_retries
-        attempts = 0
+      def with_retries(interactive: true)
+        schedule = interactive ? INTERACTIVE_BACKOFF : UNATTENDED_BACKOFF
+        attempt = 0
         begin
-          attempts += 1
           yield
         rescue APIError => e
-          raise if attempts >= MAX_RETRIES
-          sleep(0.1 * (2**attempts))
+          raise unless e.transient?
+          raise if attempt >= schedule.length
+          sleep_for(jitter(schedule[attempt]))
+          attempt += 1
           retry
         end
+      end
+
+      # +/- JITTER_RATIO randomization so multiple bots don't retry in lockstep.
+      def jitter(seconds)
+        delta = seconds * JITTER_RATIO
+        seconds + rand(-delta..delta)
+      end
+
+      # Seam so tests can capture backoff without real sleeping.
+      def sleep_for(seconds)
+        sleep(seconds)
       end
     end
   end
