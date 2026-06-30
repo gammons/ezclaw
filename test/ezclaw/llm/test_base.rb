@@ -81,4 +81,37 @@ class TestLLMBaseRetries < Minitest::Test
     end
     assert_equal [], r.slept
   end
+
+  def test_first_try_success_does_not_sleep
+    r = Retryable.new
+    calls = 0
+    result = r.run(interactive: false) do
+      calls += 1
+      :ok
+    end
+    assert_equal :ok, result
+    assert_equal 1, calls
+    assert_equal [], r.slept
+  end
+end
+
+class TestLLMBaseJitter < Minitest::Test
+  class Bare < Ezclaw::LLM::Base
+    def initialize = super(model: "fake", max_tokens: 1)
+  end
+
+  def test_jitter_stays_within_plus_minus_20_percent_and_nonnegative
+    bare = Bare.new
+    base = 30
+    1000.times do
+      j = bare.send(:jitter, base)
+      assert_operator j, :>=, base * 0.8
+      assert_operator j, :<, base * 1.2
+      assert_operator j, :>=, 0
+    end
+  end
+
+  def test_jitter_is_a_float
+    assert_kind_of Float, Bare.new.send(:jitter, 5)
+  end
 end
