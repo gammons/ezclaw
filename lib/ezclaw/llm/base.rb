@@ -5,7 +5,21 @@ require "json"
 
 module Ezclaw
   module LLM
-    class APIError < StandardError; end
+    class APIError < StandardError
+      attr_reader :status
+
+      def initialize(message, status: nil)
+        super(message)
+        @status = status
+      end
+
+      # Transient = worth retrying. Upstream rate-limits (429) and server
+      # errors (5xx) clear on their own; other 4xx are caller bugs and must
+      # fail fast.
+      def transient?
+        status == 429 || (status.is_a?(Integer) && status >= 500 && status < 600)
+      end
+    end
 
     class Base
       MAX_RETRIES = 3
