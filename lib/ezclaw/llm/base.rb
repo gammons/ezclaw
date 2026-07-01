@@ -34,7 +34,7 @@ module Ezclaw
         @max_tokens = max_tokens
       end
 
-      def chat(messages:, tools: [], model: nil)
+      def chat(messages:, tools: [], model: nil, interactive: true)
         raise NotImplementedError
       end
 

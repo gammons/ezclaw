@@ -10,6 +10,7 @@ class TestAnthropic < Minitest::Test
 
   def teardown
     ENV.delete("ANTHROPIC_API_KEY")
+    super
   end
 
   def test_chat_text_response
