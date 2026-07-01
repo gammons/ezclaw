@@ -12,7 +12,10 @@ class FakeLLM < Ezclaw::LLM::Base
     @call_count = 0
   end
 
-  def chat(messages:, tools: [], model: nil)
+  attr_reader :last_interactive
+
+  def chat(messages:, tools: [], model: nil, interactive: true)
+    @last_interactive = interactive
     resp = @responses[@call_count] || { role: "assistant", content: "default response", tool_calls: nil }
     @call_count += 1
     resp
@@ -92,5 +95,17 @@ class TestMessageProcessor < Minitest::Test
 
     result = @processor.process(user_message: "loop forever")
     assert result[:content]
+  end
+
+  def test_cron_source_is_unattended
+    @llm.responses = [{ role: "assistant", content: "brief", tool_calls: nil }]
+    @processor.process(user_message: "go", source: "cron:heartbeat")
+    assert_equal false, @llm.last_interactive
+  end
+
+  def test_slack_source_is_interactive
+    @llm.responses = [{ role: "assistant", content: "hi", tool_calls: nil }]
+    @processor.process(user_message: "go", source: "slack")
+    assert_equal true, @llm.last_interactive
   end
 end
