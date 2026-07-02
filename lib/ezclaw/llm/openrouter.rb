@@ -17,8 +17,8 @@ module Ezclaw
         end
       end
 
-      def chat(messages:, tools: [], model: nil)
-        with_retries do
+      def chat(messages:, tools: [], model: nil, interactive: true)
+        with_retries(interactive: interactive) do
           body = build_request(messages, tools, model)
           response = @conn.post { |req|
             req.headers["Authorization"] = "Bearer #{@api_key}"
@@ -26,7 +26,9 @@ module Ezclaw
             req.body = JSON.generate(body)
           }
 
-          raise APIError, "HTTP #{response.status}: #{response.body}" unless response.status == 200
+          unless response.status == 200
+            raise APIError.new("HTTP #{response.status}: #{response.body}", status: response.status)
+          end
 
           parse_response(response.body)
         end

@@ -10,6 +10,7 @@ class TestOpenRouter < Minitest::Test
 
   def teardown
     ENV.delete("OPENROUTER_API_KEY")
+    super # webmock/minitest resets request counts in Minitest::Test#teardown
   end
 
   def test_chat_text_response
@@ -101,5 +102,30 @@ class TestOpenRouter < Minitest::Test
     assert_raises(Ezclaw::LLM::APIError) do
       @adapter.chat(messages: [{ role: "user", content: "test" }])
     end
+  end
+
+  def test_does_not_retry_client_error
+    stub_request(:post, "https://openrouter.ai/api/v1/chat/completions")
+      .to_return(status: 400, body: "bad request")
+
+    assert_raises(Ezclaw::LLM::APIError) do
+      @adapter.chat(messages: [{ role: "user", content: "test" }])
+    end
+    assert_requested(:post, "https://openrouter.ai/api/v1/chat/completions", times: 1)
+  end
+
+  def test_unattended_context_retries_aggressively
+    stub_request(:post, "https://openrouter.ai/api/v1/chat/completions")
+      .to_return(status: 529, body: "overloaded").times(5)
+
+    # Stub the sleep seam so the test doesn't actually wait ~110s.
+    slept = []
+    @adapter.define_singleton_method(:sleep_for) { |s| slept << s }
+
+    assert_raises(Ezclaw::LLM::APIError) do
+      @adapter.chat(messages: [{ role: "user", content: "test" }], interactive: false)
+    end
+    assert_requested(:post, "https://openrouter.ai/api/v1/chat/completions", times: 5)
+    assert_equal 4, slept.length
   end
 end

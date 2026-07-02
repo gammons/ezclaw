@@ -16,8 +16,8 @@ module Ezclaw
         end
       end
 
-      def chat(messages:, tools: [], model: nil)
-        @delegate.chat(messages: messages, tools: tools, model: model)
+      def chat(messages:, tools: [], model: nil, interactive: true)
+        @delegate.chat(messages: messages, tools: tools, model: model, interactive: interactive)
       end
 
       class OpenAIDelegate < OpenRouter

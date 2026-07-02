@@ -108,7 +108,7 @@ module Ezclaw
 
     def run_dry
       @logger.info("bot", "Starting dry run")
-      scheduler = Scheduler.new(processor: @processor, schedule: @config.schedule, logger: @logger)
+      scheduler = Scheduler.new(processor: @processor, schedule: @config.schedule, logger: @logger, config: @config)
 
       @config.schedule.each_key do |name|
         @logger.info("bot", "Dry run trigger: #{name}")
@@ -137,7 +137,7 @@ module Ezclaw
         Tools::SlackPostTool.repl_mode = true
       end
 
-      scheduler = Scheduler.new(processor: @processor, schedule: @config.schedule, logger: @logger)
+      scheduler = Scheduler.new(processor: @processor, schedule: @config.schedule, logger: @logger, config: @config)
       scheduler.start
 
       @logger.info("bot", "Bot running. Press Ctrl+C to stop.")

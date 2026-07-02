@@ -19,6 +19,9 @@ module Ezclaw
     def process(user_message:, conversation_history: [], source: "unknown", on_status: nil)
       messages = build_messages(user_message, conversation_history)
       tools = @registry.schemas
+      # Cron/heartbeat work is unattended: let the LLM client retry hard.
+      # Everything else is interactive and should fail fast.
+      interactive = !source.to_s.start_with?("cron:")
 
       iterations = 0
       loop do
@@ -26,7 +29,7 @@ module Ezclaw
         on_status&.call("Thinking...")
         @logger.info("llm", "Request to #{source} | tools=#{tools.length}")
 
-        response = @llm.chat(messages: messages, tools: tools)
+        response = @llm.chat(messages: messages, tools: tools, interactive: interactive)
 
         if response[:usage]
           @logger.info("llm", "Usage: in=#{response[:usage][:input]} out=#{response[:usage][:output]}")
