@@ -16,8 +16,8 @@ module Ezclaw
     # on_status: optional callback proc that receives a status string
     #   e.g., "Thinking...", "Running tool: stripe", "Generating response..."
     #   Called with nil to clear status.
-    def process(user_message:, conversation_history: [], source: "unknown", on_status: nil)
-      messages = build_messages(user_message, conversation_history)
+    def process(user_message:, conversation_history: [], images: [], source: "unknown", on_status: nil)
+      messages = build_messages(user_message, conversation_history, images)
       tools = @registry.schemas
       # Cron/heartbeat work is unattended: let the LLM client retry hard.
       # Everything else is interactive and should fail fast.
@@ -64,14 +64,27 @@ module Ezclaw
 
     private
 
-    def build_messages(user_message, conversation_history)
+    def build_messages(user_message, conversation_history, images)
       memory_content = @memory.read
       full_system = [@system_prompt, memory_content].reject(&:empty?).join("\n---\n")
 
       messages = [{ role: "system", content: full_system }]
       messages.concat(conversation_history) if conversation_history.any?
-      messages << { role: "user", content: user_message }
+      messages << { role: "user", content: user_content(user_message, images) }
       messages
+    end
+
+    # When images are attached, the user turn becomes an array of normalized
+    # content blocks ({ type: "text"/"image", ... }) that each LLM adapter
+    # translates into its provider-specific format. With no images we keep the
+    # plain-string form for backwards compatibility.
+    def user_content(user_message, images)
+      return user_message if images.nil? || images.empty?
+
+      blocks = []
+      blocks << { type: "text", text: user_message } unless user_message.to_s.strip.empty?
+      blocks.concat(images)
+      blocks
     end
   end
 end

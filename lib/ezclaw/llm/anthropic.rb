@@ -81,11 +81,39 @@ module Ezclaw
               content: [{ type: "tool_result", tool_use_id: tool_call_id, content: content }]
             }
           else
-            converted << { role: role, content: content }
+            converted << { role: role, content: anthropic_content(content) }
           end
         end
 
         [system_text, converted]
+      end
+
+      # Translates normalized content into Anthropic's format. A plain String
+      # passes through unchanged; an array of normalized blocks (text/image)
+      # is mapped to Anthropic content blocks, turning our internal image
+      # representation into the { type: "image", source: { ... } } shape the
+      # Messages API expects.
+      def anthropic_content(content)
+        return content unless content.is_a?(Array)
+
+        content.map do |block|
+          type = block[:type] || block["type"]
+          case type
+          when "image"
+            {
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: block[:media_type] || block["media_type"],
+                data: block[:data] || block["data"]
+              }
+            }
+          when "text"
+            { type: "text", text: block[:text] || block["text"] }
+          else
+            block
+          end
+        end
       end
 
       def anthropic_tool(tool)

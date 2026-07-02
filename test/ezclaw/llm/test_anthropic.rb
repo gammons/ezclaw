@@ -75,6 +75,39 @@ class TestAnthropic < Minitest::Test
     assert_equal({ "name" => "Grant" }, result[:tool_calls][0][:arguments])
   end
 
+  def test_converts_image_content_blocks
+    stub_request(:post, "https://api.anthropic.com/v1/messages")
+      .to_return(
+        status: 200,
+        body: JSON.generate({ content: [{ type: "text", text: "I see a chart." }], usage: { input_tokens: 1, output_tokens: 1 } }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    @adapter.chat(messages: [
+      { role: "user", content: [
+        { type: "text", text: "what is this?" },
+        { type: "image", media_type: "image/png", data: "QUJD" }
+      ] }
+    ])
+
+    assert_requested(:post, "https://api.anthropic.com/v1/messages") { |req|
+      body = JSON.parse(req.body)
+      user = body["messages"].find { |m| m["role"] == "user" }
+      content = user && user["content"]
+      next false unless content.is_a?(Array)
+
+      text_block = content.find { |c| c["type"] == "text" }
+      image_block = content.find { |c| c["type"] == "image" }
+
+      text_block && text_block["text"] == "what is this?" &&
+        image_block &&
+        image_block["source"] &&
+        image_block["source"]["type"] == "base64" &&
+        image_block["source"]["media_type"] == "image/png" &&
+        image_block["source"]["data"] == "QUJD"
+    }
+  end
+
   def test_tool_result_message_format
     stub_request(:post, "https://api.anthropic.com/v1/messages")
       .to_return(

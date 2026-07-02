@@ -3,6 +3,7 @@
 require_relative "../test_helper"
 require "ezclaw/slack_listener"
 require "tmpdir"
+require "timeout"
 
 class TestSlackListener < Minitest::Test
   def setup
@@ -201,6 +202,124 @@ class TestSlackListener < Minitest::Test
     listener.send(:handle_event, dm_event)
     assert_match(/Message from U0HUMAN/, @output.string,
                  "Expected DM `message` event to be processed.")
+  end
+
+  # --- Image / file attachment handling ---
+
+  def test_image_files_selects_only_supported_image_mimetypes
+    listener = build_listener
+    event = {
+      "files" => [
+        { "id" => "F1", "mimetype" => "image/png", "url_private_download" => "https://files.slack.com/p.png" },
+        { "id" => "F2", "mimetype" => "application/pdf", "url_private_download" => "https://files.slack.com/d.pdf" },
+        { "id" => "F3", "mimetype" => "image/jpeg", "url_private_download" => "https://files.slack.com/j.jpg" }
+      ]
+    }
+    files = listener.send(:image_files, event)
+    assert_equal ["F1", "F3"], files.map { |f| f["id"] }
+  end
+
+  def test_image_files_empty_when_no_files
+    listener = build_listener
+    assert_equal [], listener.send(:image_files, { "text" => "hi" })
+  end
+
+  def test_download_image_fetches_with_auth_and_base64_encodes
+    listener = build_listener
+    url = "https://files.slack.com/secret.png"
+    stub_request(:get, url)
+      .with(headers: { "Authorization" => "Bearer xoxb-test" })
+      .to_return(status: 200, body: "ABC", headers: { "Content-Type" => "image/png" })
+
+    file = { "mimetype" => "image/png", "url_private_download" => url }
+    result = listener.send(:download_image, file)
+
+    assert_equal "image", result[:type]
+    assert_equal "image/png", result[:media_type]
+    assert_equal [+"ABC"].pack("m0"), result[:data]
+  end
+
+  def test_download_image_returns_nil_on_http_error
+    listener = build_listener
+    url = "https://files.slack.com/missing.png"
+    stub_request(:get, url).to_return(status: 403, body: "denied")
+    file = { "mimetype" => "image/png", "url_private_download" => url }
+    assert_nil listener.send(:download_image, file)
+  end
+
+  def test_image_only_message_is_not_dropped
+    # A message with an image attachment but no caption text must still be
+    # processed (previously `return if clean_text.empty?` dropped it entirely).
+    listener = build_channel_listener
+    event = channel_app_mention_event.merge(
+      "text" => "<@#{BOT_USER_ID}>",
+      "files" => [{ "id" => "F1", "mimetype" => "image/png", "url_private_download" => "https://files.slack.com/p.png" }]
+    )
+    listener.send(:handle_event, event)
+    assert_match(/Message from U0HUMAN/, @output.string,
+                 "Expected image-only message to be processed, not dropped.")
+  end
+
+  def test_image_message_passes_downloaded_images_to_processor
+    url = "https://files.slack.com/chart.png"
+    stub_request(:get, url)
+      .with(headers: { "Authorization" => "Bearer xoxb-test" })
+      .to_return(status: 200, body: "PNGBYTES", headers: { "Content-Type" => "image/png" })
+
+    listener = build_channel_listener
+    queue = Queue.new
+    processor = Object.new
+    processor.define_singleton_method(:process) do |user_message:, images: [], **|
+      queue.push(images)
+      { content: "" }
+    end
+    listener.instance_variable_set(:@processor, processor)
+
+    event = channel_app_mention_event.merge(
+      "text" => "<@#{BOT_USER_ID}> what is this?",
+      "files" => [{ "id" => "F1", "mimetype" => "image/png", "url_private_download" => url }]
+    )
+    listener.send(:handle_event, event)
+
+    images = nil
+    Timeout.timeout(3) { images = queue.pop }
+    assert_equal(
+      [{ type: "image", media_type: "image/png", data: [+"PNGBYTES"].pack("m0") }],
+      images
+    )
+  end
+
+  def test_thread_history_includes_images_from_prior_messages
+    url = "https://files.slack.com/old.png"
+    stub_request(:get, url)
+      .with(headers: { "Authorization" => "Bearer xoxb-test" })
+      .to_return(status: 200, body: "OLDIMG", headers: { "Content-Type" => "image/png" })
+
+    listener = build_listener
+    listener.instance_variable_set(:@bot_user_id, BOT_USER_ID)
+    web = Object.new
+    web.define_singleton_method(:conversations_replies) do |**|
+      {
+        "messages" => [
+          {
+            "ts" => "1.0", "user" => "U0HUMAN", "text" => "see attached",
+            "files" => [{ "id" => "F1", "mimetype" => "image/png", "url_private_download" => url }]
+          },
+          { "ts" => "2.0", "user" => BOT_USER_ID, "text" => "looking" }
+        ]
+      }
+    end
+    listener.instance_variable_set(:@web_client, web)
+
+    history = listener.send(:fetch_thread_history, "C0CHAN", "1.0", "9.9")
+    user_turn = history.find { |m| m[:role] == "user" }
+    assert_equal(
+      [
+        { type: "text", text: "see attached" },
+        { type: "image", media_type: "image/png", data: [+"OLDIMG"].pack("m0") }
+      ],
+      user_turn[:content]
+    )
   end
 
   def test_processes_message_event_in_channel_without_mention_falls_through

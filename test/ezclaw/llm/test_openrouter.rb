@@ -81,6 +81,37 @@ class TestOpenRouter < Minitest::Test
     }
   end
 
+  def test_converts_image_content_blocks_to_openai_vision_format
+    stub_request(:post, "https://openrouter.ai/api/v1/chat/completions")
+      .to_return(
+        status: 200,
+        body: JSON.generate({ choices: [{ message: { role: "assistant", content: "ok" } }], usage: { prompt_tokens: 1, completion_tokens: 1 } }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    @adapter.chat(messages: [
+      { role: "user", content: [
+        { type: "text", text: "what is this?" },
+        { type: "image", media_type: "image/png", data: "QUJD" }
+      ] }
+    ])
+
+    assert_requested(:post, "https://openrouter.ai/api/v1/chat/completions") { |req|
+      body = JSON.parse(req.body)
+      user = body["messages"].find { |m| m["role"] == "user" }
+      content = user && user["content"]
+      next false unless content.is_a?(Array)
+
+      text_block = content.find { |c| c["type"] == "text" }
+      image_block = content.find { |c| c["type"] == "image_url" }
+
+      text_block && text_block["text"] == "what is this?" &&
+        image_block &&
+        image_block["image_url"] &&
+        image_block["image_url"]["url"] == "data:image/png;base64,QUJD"
+    }
+  end
+
   def test_retries_on_server_error
     stub_request(:post, "https://openrouter.ai/api/v1/chat/completions")
       .to_return(status: 500, body: "Internal Server Error")
