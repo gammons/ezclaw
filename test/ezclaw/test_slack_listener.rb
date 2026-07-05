@@ -322,6 +322,74 @@ class TestSlackListener < Minitest::Test
     )
   end
 
+  # --- Self-loop prevention: unknown bot identity must fail SAFE ---
+  #
+  # If auth_test fails at startup, @bot_user_id stays nil. The self-message
+  # filter `event["user"] == @bot_user_id` then compares against nil and never
+  # matches, so the bot processes its OWN messages. In an open DM (no mention
+  # gate) this produces an infinite self-reply loop. Guard: process nothing
+  # until identity is known.
+
+  def test_does_not_process_dm_when_bot_identity_unknown
+    listener = build_channel_listener
+    listener.instance_variable_set(:@bot_user_id, nil)
+    dm_event = {
+      "type" => "message",
+      "user" => "U0SELF",
+      "channel" => "D0DM",
+      "channel_type" => "im",
+      "text" => "hello",
+      "ts" => "1700000000.000100"
+    }
+    listener.send(:handle_event, dm_event)
+    refute_match(
+      /Message from/, @output.string,
+      "Expected no message processing while bot identity is unknown (would risk self-loop)"
+    )
+  end
+
+  # --- fetch_bot_identity resilience ---
+  #
+  # A transient auth_test timeout must not permanently disable identity (and
+  # thus the self-filter). Retry, and fail LOUD if it never succeeds so the
+  # pod restarts rather than running blind.
+
+  def build_identity_listener(auth_test_proc)
+    listener = build_listener
+    web = Object.new
+    web.define_singleton_method(:auth_test, &auth_test_proc)
+    listener.instance_variable_set(:@web_client, web)
+    listener
+  end
+
+  def test_fetch_bot_identity_retries_transient_failure_then_succeeds
+    calls = 0
+    listener = build_identity_listener(proc do
+      calls += 1
+      raise "timeout_error" if calls < 3
+      { "user_id" => "U0SELF", "user" => "pulse" }
+    end)
+
+    listener.send(:fetch_bot_identity, max_attempts: 5, retry_delay: 0)
+
+    assert_equal "U0SELF", listener.instance_variable_get(:@bot_user_id)
+    assert_equal 3, calls
+  end
+
+  def test_fetch_bot_identity_raises_after_exhausting_retries
+    calls = 0
+    listener = build_identity_listener(proc do
+      calls += 1
+      raise "timeout_error"
+    end)
+
+    assert_raises(RuntimeError) do
+      listener.send(:fetch_bot_identity, max_attempts: 3, retry_delay: 0)
+    end
+    assert_equal 3, calls
+    assert_nil listener.instance_variable_get(:@bot_user_id)
+  end
+
   def test_processes_message_event_in_channel_without_mention_falls_through
     # Plain channel message that doesn't mention the bot: app_mention does NOT
     # fire, so the `message` event is the ONLY copy. We must process it

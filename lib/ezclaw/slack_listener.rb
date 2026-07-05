@@ -20,6 +20,14 @@ module Ezclaw
     # How long to wait before reconnecting after a close/error (seconds).
     RECONNECT_DELAY_SECONDS = 5
 
+    # How many times to attempt fetching our own bot identity (auth_test)
+    # before giving up and crashing. Knowing our user ID is required to
+    # filter out our own messages, so a transient failure must be retried.
+    IDENTITY_MAX_ATTEMPTS = 5
+
+    # Delay between bot-identity fetch attempts (seconds).
+    IDENTITY_RETRY_SECONDS = 3
+
     # Slack file mimetypes we forward to the LLM as images. Limited to the
     # formats the Anthropic/OpenAI vision APIs accept.
     SUPPORTED_IMAGE_MIMETYPES = %w[image/png image/jpeg image/gif image/webp].freeze
@@ -231,6 +239,16 @@ module Ezclaw
       type = event["type"]
       return unless type == "message" || type == "app_mention"
 
+      # Fail SAFE when our own identity is unknown. The self-message filter
+      # below (`event["user"] == @bot_user_id`) compares against nil if
+      # auth_test never succeeded, so it would never match and the bot would
+      # process its OWN messages — an infinite self-reply loop in open DMs.
+      # Refuse to process anything until we know who we are.
+      if @bot_user_id.nil?
+        @logger.warn("slack", "Skipping event: bot identity unknown (auth_test may have failed)")
+        return
+      end
+
       return if event["user"] == @bot_user_id
       return if event["subtype"] && event["subtype"] != "message_replied"
 
@@ -343,12 +361,28 @@ module Ezclaw
       @logger.debug("slack", "Could not remove reaction: #{e.message}")
     end
 
-    def fetch_bot_identity
-      auth = @web_client.auth_test
-      @bot_user_id = auth["user_id"]
-      @logger.info("slack", "Connected as #{auth['user']} (#{@bot_user_id})")
-    rescue => e
-      @logger.warn("slack", "Could not fetch bot identity: #{e.message}")
+    # Fetch our own Slack user ID. This is REQUIRED for correctness: without
+    # it we cannot filter out our own messages (self-loop) or detect
+    # @mentions. A transient auth_test timeout must NOT silently disable it,
+    # so we retry with a linear backoff. If it never succeeds we raise, which
+    # crashes the process and lets the orchestrator restart us — far better
+    # than running blind and looping on our own messages.
+    def fetch_bot_identity(max_attempts: IDENTITY_MAX_ATTEMPTS, retry_delay: IDENTITY_RETRY_SECONDS)
+      attempt = 0
+      begin
+        attempt += 1
+        auth = @web_client.auth_test
+        @bot_user_id = auth["user_id"]
+        @logger.info("slack", "Connected as #{auth['user']} (#{@bot_user_id})")
+      rescue => e
+        if attempt < max_attempts
+          @logger.warn("slack", "Could not fetch bot identity (attempt #{attempt}/#{max_attempts}): #{e.message}; retrying in #{retry_delay}s")
+          sleep(retry_delay)
+          retry
+        end
+        @logger.error("slack", "Could not fetch bot identity after #{max_attempts} attempts: #{e.message}")
+        raise
+      end
     end
 
     def allowed_channel?(channel_id, is_dm)
