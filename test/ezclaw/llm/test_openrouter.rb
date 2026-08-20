@@ -159,4 +159,13 @@ class TestOpenRouter < Minitest::Test
     assert_requested(:post, "https://openrouter.ai/api/v1/chat/completions", times: 5)
     assert_equal 4, slept.length
   end
+  def test_default_timeout_is_120
+    assert_equal 120, @adapter.instance_variable_get(:@conn).options.timeout
+  end
+
+  def test_timeout_seconds_is_configurable
+    adapter = Ezclaw::LLM::OpenRouter.new(model: "anthropic/claude-sonnet-4", max_tokens: 1024, timeout_seconds: 600)
+    assert_equal 600, adapter.instance_variable_get(:@conn).options.timeout
+  end
+
 end

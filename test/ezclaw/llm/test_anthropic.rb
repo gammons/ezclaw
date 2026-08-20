@@ -128,4 +128,13 @@ class TestAnthropic < Minitest::Test
       msgs.any? { |m| m["role"] == "user" && m["content"].is_a?(Array) && m["content"].any? { |c| c["type"] == "tool_result" } }
     }
   end
+  def test_default_timeout_is_120
+    assert_equal 120, @adapter.instance_variable_get(:@conn).options.timeout
+  end
+
+  def test_timeout_seconds_is_configurable
+    adapter = Ezclaw::LLM::Anthropic.new(model: "claude-sonnet-4-20250514", max_tokens: 1024, timeout_seconds: 600)
+    assert_equal 600, adapter.instance_variable_get(:@conn).options.timeout
+  end
+
 end

@@ -79,6 +79,9 @@ llm:
   provider: openrouter           # "openrouter", "anthropic", or "custom"
   model: anthropic/claude-sonnet-4
   max_tokens: 8192
+  # timeout_seconds: 120         # HTTP read timeout for a single LLM response.
+                                 # Raise it if long generations (e.g. a full
+                                 # memory rewrite) hit Net::ReadTimeout.
   # For custom providers:
   # base_url: https://api.example.com/v1/chat/completions
   # format: openai               # "openai" or "anthropic"
