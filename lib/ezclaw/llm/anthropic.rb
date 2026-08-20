@@ -5,8 +5,9 @@ module Ezclaw
     class Anthropic < Base
       BASE_URL = "https://api.anthropic.com/v1/messages"
 
-      def initialize(model:, max_tokens: 4096, api_key_env: "ANTHROPIC_API_KEY", timeout_seconds: 120)
+      def initialize(model:, max_tokens: 4096, api_key_env: "ANTHROPIC_API_KEY", timeout_seconds: 120, effort: nil)
         super(model: model, max_tokens: max_tokens)
+        @effort = effort
         @api_key = ENV.fetch(api_key_env)
         @conn = Faraday.new(url: BASE_URL) do |f|
           f.request :json
@@ -47,6 +48,9 @@ module Ezclaw
         }
         body[:system] = system_text if system_text
         body[:tools] = tools.map { |t| anthropic_tool(t) } if tools.any?
+        # output_config.effort ("low".."max") tunes response depth/verbosity.
+        # Omit the whole object when unset so older models are unaffected.
+        body[:output_config] = { effort: @effort } if @effort
 
         body
       end

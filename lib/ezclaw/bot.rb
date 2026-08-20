@@ -64,7 +64,8 @@ module Ezclaw
           model: llm_config["model"],
           max_tokens: llm_config.fetch("max_tokens", 4096),
           api_key_env: llm_config.fetch("api_key_env", "ANTHROPIC_API_KEY"),
-          timeout_seconds: llm_config.fetch("timeout_seconds", 120)
+          timeout_seconds: llm_config.fetch("timeout_seconds", 120),
+          effort: llm_config["effort"]
         )
       when "custom"
         LLM::Custom.new(
@@ -73,7 +74,8 @@ module Ezclaw
           format: llm_config.fetch("format", "openai"),
           max_tokens: llm_config.fetch("max_tokens", 4096),
           api_key_env: llm_config["api_key_env"],
-          timeout_seconds: llm_config.fetch("timeout_seconds", 120)
+          timeout_seconds: llm_config.fetch("timeout_seconds", 120),
+          effort: llm_config["effort"]
         )
       else
         raise "Unknown LLM provider: #{provider}"

@@ -79,6 +79,10 @@ llm:
   provider: openrouter           # "openrouter", "anthropic", or "custom"
   model: anthropic/claude-sonnet-4
   max_tokens: 8192
+  # effort: medium               # Anthropic only: output_config.effort
+                                 # ("low"|"medium"|"high"|"xhigh"|"max").
+                                 # Lower = terser replies, fewer tool calls.
+                                 # Omit to use the API default ("high").
   # timeout_seconds: 120         # HTTP read timeout for a single LLM response.
                                  # Raise it if long generations (e.g. a full
                                  # memory rewrite) hit Net::ReadTimeout.
