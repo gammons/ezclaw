@@ -54,4 +54,16 @@ class TestCustom < Minitest::Test
     result = adapter.chat(messages: [{ role: "user", content: "Hi" }])
     assert_equal "Custom response", result[:content]
   end
+  def test_timeout_seconds_reaches_delegate
+    adapter = Ezclaw::LLM::Custom.new(
+      model: "glm-5-turbo",
+      base_url: "https://api.z.ai/api/v1/chat/completions",
+      format: "openai",
+      api_key_env: "ZAI_API_KEY",
+      timeout_seconds: 600
+    )
+    delegate = adapter.instance_variable_get(:@delegate)
+    assert_equal 600, delegate.instance_variable_get(:@conn).options.timeout
+  end
+
 end

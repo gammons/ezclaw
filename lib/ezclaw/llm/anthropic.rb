@@ -5,13 +5,13 @@ module Ezclaw
     class Anthropic < Base
       BASE_URL = "https://api.anthropic.com/v1/messages"
 
-      def initialize(model:, max_tokens: 4096, api_key_env: "ANTHROPIC_API_KEY")
+      def initialize(model:, max_tokens: 4096, api_key_env: "ANTHROPIC_API_KEY", timeout_seconds: 120)
         super(model: model, max_tokens: max_tokens)
         @api_key = ENV.fetch(api_key_env)
         @conn = Faraday.new(url: BASE_URL) do |f|
           f.request :json
           f.response :json
-          f.options.timeout = 120
+          f.options.timeout = timeout_seconds
           f.options.open_timeout = 15
           f.adapter Faraday.default_adapter
         end

@@ -56,13 +56,15 @@ module Ezclaw
         LLM::OpenRouter.new(
           model: llm_config["model"],
           max_tokens: llm_config.fetch("max_tokens", 4096),
-          api_key_env: llm_config.fetch("api_key_env", "OPENROUTER_API_KEY")
+          api_key_env: llm_config.fetch("api_key_env", "OPENROUTER_API_KEY"),
+          timeout_seconds: llm_config.fetch("timeout_seconds", 120)
         )
       when "anthropic"
         LLM::Anthropic.new(
           model: llm_config["model"],
           max_tokens: llm_config.fetch("max_tokens", 4096),
-          api_key_env: llm_config.fetch("api_key_env", "ANTHROPIC_API_KEY")
+          api_key_env: llm_config.fetch("api_key_env", "ANTHROPIC_API_KEY"),
+          timeout_seconds: llm_config.fetch("timeout_seconds", 120)
         )
       when "custom"
         LLM::Custom.new(
@@ -70,7 +72,8 @@ module Ezclaw
           base_url: llm_config.fetch("base_url"),
           format: llm_config.fetch("format", "openai"),
           max_tokens: llm_config.fetch("max_tokens", 4096),
-          api_key_env: llm_config["api_key_env"]
+          api_key_env: llm_config["api_key_env"],
+          timeout_seconds: llm_config.fetch("timeout_seconds", 120)
         )
       else
         raise "Unknown LLM provider: #{provider}"
