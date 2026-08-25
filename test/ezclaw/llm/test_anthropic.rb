@@ -137,4 +137,30 @@ class TestAnthropic < Minitest::Test
     assert_equal 600, adapter.instance_variable_get(:@conn).options.timeout
   end
 
+  def stub_simple_ok
+    stub_request(:post, "https://api.anthropic.com/v1/messages")
+      .to_return(
+        status: 200,
+        body: JSON.generate({ content: [{ type: "text", text: "ok" }], usage: { input_tokens: 1, output_tokens: 1 } }),
+        headers: { "Content-Type" => "application/json" }
+      )
+  end
+
+  def test_effort_omitted_by_default
+    stub_simple_ok
+    @adapter.chat(messages: [{ role: "user", content: "Hi" }])
+    assert_requested(:post, "https://api.anthropic.com/v1/messages") { |req|
+      !JSON.parse(req.body).key?("output_config")
+    }
+  end
+
+  def test_effort_sent_as_output_config
+    stub_simple_ok
+    adapter = Ezclaw::LLM::Anthropic.new(model: "claude-opus-5", max_tokens: 1024, effort: "medium")
+    adapter.chat(messages: [{ role: "user", content: "Hi" }])
+    assert_requested(:post, "https://api.anthropic.com/v1/messages") { |req|
+      JSON.parse(req.body)["output_config"] == { "effort" => "medium" }
+    }
+  end
+
 end

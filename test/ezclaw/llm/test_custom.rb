@@ -66,4 +66,16 @@ class TestCustom < Minitest::Test
     assert_equal 600, delegate.instance_variable_get(:@conn).options.timeout
   end
 
+  def test_effort_reaches_anthropic_delegate
+    adapter = Ezclaw::LLM::Custom.new(
+      model: "claude-opus-5",
+      base_url: "https://api.example.com/v1/messages",
+      format: "anthropic",
+      api_key_env: "ZAI_API_KEY",
+      effort: "low"
+    )
+    delegate = adapter.instance_variable_get(:@delegate)
+    assert_equal "low", delegate.instance_variable_get(:@effort)
+  end
+
 end
