@@ -168,4 +168,47 @@ class TestOpenRouter < Minitest::Test
     assert_equal 600, adapter.instance_variable_get(:@conn).options.timeout
   end
 
+  # Anthropic models on OpenRouter honor cache_control breakpoints on content
+  # blocks. The system prompt (role files + memory) is ~90% of input tokens
+  # and identical across calls, so marking it ephemeral-cachable cuts input
+  # spend roughly 60-70% for tool-loop-heavy bots.
+  def test_system_message_gets_cache_control_for_anthropic_model
+    stub_request(:post, "https://openrouter.ai/api/v1/chat/completions")
+      .to_return(
+        status: 200,
+        body: JSON.generate({ choices: [{ message: { role: "assistant", content: "ok" } }], usage: { prompt_tokens: 1, completion_tokens: 1 } }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    @adapter.chat(messages: [{ role: "system", content: "You are helpful." }, { role: "user", content: "Hi" }])
+
+    assert_requested(:post, "https://openrouter.ai/api/v1/chat/completions") { |req|
+      sys = JSON.parse(req.body)["messages"].first
+      sys["role"] == "system" &&
+        sys["content"].is_a?(Array) &&
+        sys["content"].first["type"] == "text" &&
+        sys["content"].first["text"] == "You are helpful." &&
+        sys["content"].first["cache_control"] == { "type" => "ephemeral" }
+    }
+  end
+
+  # Other providers may reject the unknown cache_control field, so only
+  # anthropic/* models get the annotation.
+  def test_no_cache_control_for_non_anthropic_model
+    adapter = Ezclaw::LLM::OpenRouter.new(model: "openai/gpt-5", max_tokens: 1024)
+    stub_request(:post, "https://openrouter.ai/api/v1/chat/completions")
+      .to_return(
+        status: 200,
+        body: JSON.generate({ choices: [{ message: { role: "assistant", content: "ok" } }], usage: { prompt_tokens: 1, completion_tokens: 1 } }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    adapter.chat(messages: [{ role: "system", content: "You are helpful." }, { role: "user", content: "Hi" }])
+
+    assert_requested(:post, "https://openrouter.ai/api/v1/chat/completions") { |req|
+      sys = JSON.parse(req.body)["messages"].first
+      sys["role"] == "system" && sys["content"] == "You are helpful."
+    }
+  end
+
 end

@@ -37,22 +37,37 @@ module Ezclaw
       private
 
       def build_request(messages, tools, model)
+        effective_model = model || @model
         body = {
-          model: model || @model,
-          messages: messages.map { |m| normalize_message(m) },
+          model: effective_model,
+          messages: messages.map { |m| normalize_message(m, cache_system: cacheable?(effective_model)) },
           max_tokens: @max_tokens
         }
         body[:tools] = tools.map { |t| openai_tool(t) } if tools.any?
         body
       end
 
-      def normalize_message(msg)
+      # Anthropic models on OpenRouter honor Anthropic-style cache_control
+      # breakpoints on content blocks. The system prompt (persona + memory)
+      # is the bulk of input tokens and identical across calls, so marking it
+      # cacheable saves real money for tool-loop-heavy bots. Other providers
+      # may reject the unknown field, so only annotate anthropic/* models.
+      def cacheable?(model)
+        model.to_s.start_with?("anthropic/")
+      end
+
+      def normalize_message(msg, cache_system: false)
         role = msg[:role] || msg["role"]
         content = msg[:content] || msg["content"]
         tool_call_id = msg[:tool_call_id] || msg["tool_call_id"]
         tool_calls = msg[:tool_calls] || msg["tool_calls"]
 
         result = { role: role, content: openai_content(content) }
+        if cache_system && role == "system" && result[:content].is_a?(String)
+          result[:content] = [
+            { type: "text", text: result[:content], cache_control: { type: "ephemeral" } }
+          ]
+        end
         result[:tool_call_id] = tool_call_id if tool_call_id
 
         # Preserve tool_calls on assistant messages (OpenAI format)
