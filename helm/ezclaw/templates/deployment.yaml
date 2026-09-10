@@ -29,6 +29,7 @@ spec:
       containers:
         - name: ezclaw
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
           args: ["--bot", "/config", "--data", "/data"]
           {{- if .Values.secrets.existingSecret }}
           envFrom:
