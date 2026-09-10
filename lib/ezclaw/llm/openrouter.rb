@@ -38,9 +38,12 @@ module Ezclaw
 
       def build_request(messages, tools, model)
         effective_model = model || @model
+        cacheable = cacheable?(effective_model)
+        normalized = messages.map { |m| normalize_message(m, cache_system: cacheable) }
+        add_prefix_breakpoint(normalized) if cacheable
         body = {
           model: effective_model,
-          messages: messages.map { |m| normalize_message(m, cache_system: cacheable?(effective_model)) },
+          messages: normalized,
           max_tokens: @max_tokens
         }
         body[:tools] = tools.map { |t| openai_tool(t) } if tools.any?
@@ -54,6 +57,29 @@ module Ezclaw
       # may reject the unknown field, so only annotate anthropic/* models.
       def cacheable?(model)
         model.to_s.start_with?("anthropic/")
+      end
+
+      # Agentic loops re-send the entire conversation — every prior tool
+      # result — on each iteration. A breakpoint on the final content-bearing
+      # message caches that prefix, so the next iteration reads it at ~10%
+      # price instead of full price. Skips messages with no content (e.g. an
+      # assistant turn that only carries tool_calls).
+      def add_prefix_breakpoint(messages)
+        messages.reverse_each do |msg|
+          content = msg[:content]
+          next if content.nil? || content == ""
+
+          if content.is_a?(String)
+            msg[:content] = [
+              { type: "text", text: content, cache_control: { type: "ephemeral" } }
+            ]
+          elsif content.is_a?(Array) && content.any?
+            last = content.last.dup
+            last[:cache_control] = { type: "ephemeral" }
+            content[-1] = last
+          end
+          return
+        end
       end
 
       def normalize_message(msg, cache_system: false)

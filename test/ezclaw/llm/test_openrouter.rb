@@ -211,4 +211,69 @@ class TestOpenRouter < Minitest::Test
     }
   end
 
+  # Tool loops re-send the entire conversation (every prior tool result) on
+  # each iteration. A breakpoint on the final message caches that prefix, so
+  # the next iteration reads it at ~10% price instead of full price.
+  def test_last_message_gets_cache_control_for_anthropic_model
+    stub_request(:post, "https://openrouter.ai/api/v1/chat/completions")
+      .to_return(
+        status: 200,
+        body: JSON.generate({ choices: [{ message: { role: "assistant", content: "ok" } }], usage: { prompt_tokens: 1, completion_tokens: 1 } }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    @adapter.chat(messages: [{ role: "system", content: "sys" }, { role: "user", content: "Hi" }])
+
+    assert_requested(:post, "https://openrouter.ai/api/v1/chat/completions") { |req|
+      user = JSON.parse(req.body)["messages"].last
+      user["role"] == "user" &&
+        user["content"].is_a?(Array) &&
+        user["content"].first["type"] == "text" &&
+        user["content"].first["text"] == "Hi" &&
+        user["content"].first["cache_control"] == { "type" => "ephemeral" }
+    }
+  end
+
+  # An assistant message with only tool_calls has nil content — the
+  # breakpoint must walk back to the last message that can carry it.
+  def test_prefix_breakpoint_skips_messages_without_content
+    stub_request(:post, "https://openrouter.ai/api/v1/chat/completions")
+      .to_return(
+        status: 200,
+        body: JSON.generate({ choices: [{ message: { role: "assistant", content: "ok" } }], usage: { prompt_tokens: 1, completion_tokens: 1 } }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    @adapter.chat(messages: [
+      { role: "system", content: "sys" },
+      { role: "user", content: "Hi" },
+      { role: "assistant", content: nil, tool_calls: [{ id: "c1", name: "foo", arguments: {} }] }
+    ])
+
+    assert_requested(:post, "https://openrouter.ai/api/v1/chat/completions") { |req|
+      msgs = JSON.parse(req.body)["messages"]
+      last = msgs.last
+      last["role"] == "assistant" && last["content"].nil? &&
+        msgs[1]["content"].is_a?(Array) &&
+        msgs[1]["content"].first["cache_control"] == { "type" => "ephemeral" }
+    }
+  end
+
+  def test_no_prefix_breakpoint_for_non_anthropic_model
+    adapter = Ezclaw::LLM::OpenRouter.new(model: "openai/gpt-5", max_tokens: 1024)
+    stub_request(:post, "https://openrouter.ai/api/v1/chat/completions")
+      .to_return(
+        status: 200,
+        body: JSON.generate({ choices: [{ message: { role: "assistant", content: "ok" } }], usage: { prompt_tokens: 1, completion_tokens: 1 } }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    adapter.chat(messages: [{ role: "system", content: "sys" }, { role: "user", content: "Hi" }])
+
+    assert_requested(:post, "https://openrouter.ai/api/v1/chat/completions") { |req|
+      user = JSON.parse(req.body)["messages"].last
+      user["role"] == "user" && user["content"] == "Hi"
+    }
+  end
+
 end
