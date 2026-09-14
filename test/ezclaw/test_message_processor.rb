@@ -5,13 +5,14 @@ require "tmpdir"
 
 class FakeLLM < Ezclaw::LLM::Base
   attr_accessor :responses
-  attr_reader :last_messages
+  attr_reader :last_messages, :last_tools
 
   def initialize
     super(model: "fake", max_tokens: 100)
     @responses = []
     @call_count = 0
     @last_messages = nil
+    @last_tools = nil
   end
 
   attr_reader :last_interactive
@@ -19,6 +20,7 @@ class FakeLLM < Ezclaw::LLM::Base
   def chat(messages:, tools: [], model: nil, interactive: true)
     @last_interactive = interactive
     @last_messages = messages
+    @last_tools = tools
     resp = @responses[@call_count] || { role: "assistant", content: "default response", tool_calls: nil }
     @call_count += 1
     resp
@@ -134,6 +136,66 @@ class TestMessageProcessor < Minitest::Test
 
     result = @processor.process(user_message: "loop forever")
     assert result[:content]
+  end
+
+  def wrapup_processor(max_tool_iterations: 3)
+    echo_tool = Class.new(Ezclaw::Tool) do
+      desc "Echo"
+      param :text, type: :string, required: true
+      def call(text:); text; end
+    end
+    @registry.register("echo", echo_tool)
+
+    Ezclaw::MessageProcessor.new(
+      llm: @llm,
+      memory: @memory,
+      tool_registry: @registry,
+      system_prompt: "You are a test bot.",
+      logger: @logger,
+      max_tool_iterations: max_tool_iterations
+    )
+  end
+
+  # Hitting the cap mid-investigation must not drop the work with a raw
+  # "tool call limit" message: the processor makes one final no-tools call
+  # so the model turns whatever it found into an answer.
+  def test_max_tool_iterations_triggers_wrapup_call
+    processor = wrapup_processor(max_tool_iterations: 3)
+    # Exactly 3 canned tool-call responses — the 4th call (the wrap-up) hits
+    # FakeLLM's fallback ("default response", no tool_calls).
+    @llm.responses = Array.new(3) { |i|
+      { role: "assistant", content: nil, tool_calls: [{ id: "c#{i}", name: "echo", arguments: { "text" => "x" } }] }
+    }
+    result = processor.process(user_message: "loop forever")
+
+    assert_equal "default response", result[:content]
+    assert_equal [], @llm.last_tools
+
+    # The wrap-up request must not replay the capped turn's unexecuted
+    # tool_calls (orphaned tool_use blocks get rejected by the API), and it
+    # carries the wrap-up instruction as the final user message.
+    final_messages = @llm.last_messages
+    assert_equal "user", final_messages.last[:role]
+    assert_match(/out of tool calls/i, final_messages.last[:content])
+    assert_nil final_messages[-2][:tool_calls]
+  end
+
+  # If the wrap-up call itself fails, fall back to the static message rather
+  # than raising out of the processing loop.
+  def test_wrapup_failure_falls_back_to_limit_message
+    raising_llm = Class.new(FakeLLM) do
+      def chat(messages:, tools: [], **)
+        raise "boom" if tools.empty?
+        super
+      end
+    end.new
+    @llm = raising_llm
+    processor = wrapup_processor(max_tool_iterations: 2)
+    @llm.responses = Array.new(5) { |i|
+      { role: "assistant", content: nil, tool_calls: [{ id: "c#{i}", name: "echo", arguments: { "text" => "x" } }] } }
+
+    result = processor.process(user_message: "loop forever")
+    assert_equal "I've reached my tool call limit. Here's what I have so far.", result[:content]
   end
 
   def test_cron_source_is_unattended
