@@ -4,6 +4,12 @@ module Ezclaw
   class MessageProcessor
     DEFAULT_MAX_TOOL_ITERATIONS = 30
 
+    TOOL_LIMIT_FALLBACK = "I've reached my tool call limit. Here's what I have so far."
+
+    WRAP_UP_PROMPT = "You are out of tool calls for this request. Stop investigating " \
+                     "and answer NOW with what you have: what you confirmed, what you " \
+                     "could not confirm, and the most useful next step. Do not call any tools."
+
     def initialize(llm:, memory:, tool_registry:, system_prompt:, logger:, max_tool_iterations: nil)
       @llm = llm
       @memory = memory
@@ -42,9 +48,9 @@ module Ezclaw
         end
 
         if iterations >= @max_tool_iterations
-          @logger.warn("llm", "Hit max tool iterations (#{@max_tool_iterations}), bailing out")
-          on_status&.call(nil)
-          return { role: "assistant", content: response[:content] || "I've reached my tool call limit. Here's what I have so far." }
+          @logger.warn("llm", "Hit max tool iterations (#{@max_tool_iterations}), requesting wrap-up")
+          on_status&.call("Wrapping up...")
+          return { role: "assistant", content: wrap_up(messages, response) }
         end
 
         messages << { role: "assistant", content: response[:content], tool_calls: response[:tool_calls] }
@@ -63,6 +69,26 @@ module Ezclaw
     end
 
     private
+
+    # The tool budget ran out mid-investigation. Give the model one final
+    # no-tools call to turn whatever it found into an answer, instead of
+    # dropping the work with a raw "tool call limit" message. The assistant
+    # turn that triggered the cap carries unexecuted tool_calls, so only its
+    # text content (if any) is appended — replaying orphaned tool_calls would
+    # make the API reject the request.
+    def wrap_up(messages, last_response)
+      content = last_response[:content]
+      messages << { role: "assistant", content: content } if content && !content.to_s.empty?
+      messages << { role: "user", content: WRAP_UP_PROMPT }
+
+      final = @llm.chat(messages: messages, tools: [])
+      answer = final[:content]
+      answer = nil if answer.to_s.empty?
+      answer || content || TOOL_LIMIT_FALLBACK
+    rescue => e
+      @logger.warn("llm", "Wrap-up call failed: #{e.class}: #{e.message}")
+      last_response[:content] || TOOL_LIMIT_FALLBACK
+    end
 
     def build_messages(user_message, conversation_history, images)
       memory_content = @memory.read
