@@ -41,7 +41,8 @@ class TestMessageProcessor < Minitest::Test
     @llm = FakeLLM.new
     @memory = Ezclaw::Memory.new(config_dir: @config_dir, data_dir: @data_dir, filename: "memory.md")
     @registry = Ezclaw::ToolRegistry.new
-    @logger = Ezclaw::Log.new(output: StringIO.new, level: :debug)
+    @log_output = StringIO.new
+    @logger = Ezclaw::Log.new(output: @log_output, level: :debug)
 
     @processor = Ezclaw::MessageProcessor.new(
       llm: @llm,
@@ -77,6 +78,46 @@ class TestMessageProcessor < Minitest::Test
 
     result = @processor.process(user_message: "Echo hello")
     assert_equal "Tool said: hello", result[:content]
+  end
+
+  def test_usage_log_includes_diagnostic_fields
+    @llm.responses = [{
+      role: "assistant", content: "Hi!", tool_calls: nil,
+      usage: { input: 54916, output: 8192, cached: 52000, reasoning: 8100 },
+      finish_reason: "length", id: "gen-abc123", reasoning_chars: 4200
+    }]
+
+    @processor.process(user_message: "Hi")
+
+    assert_match(
+      /Usage: in=54916 cached=52000 out=8192 reasoning=8100 reasoning_text=4200 text=3 finish=length \d+\.\ds id=gen-abc123$/,
+      @log_output.string
+    )
+  end
+
+  def test_usage_log_omits_absent_fields
+    @llm.responses = [{ role: "assistant", content: nil, tool_calls: nil, usage: { input: 10, output: 5 } }]
+
+    @processor.process(user_message: "Hi")
+
+    assert_match(/Usage: in=10 out=5 text=0 \d+\.\ds$/, @log_output.string)
+  end
+
+  def test_tool_result_log_includes_size
+    @llm.responses = [
+      { role: "assistant", content: nil, tool_calls: [{ id: "c1", name: "echo", arguments: { "text" => "héllo" } }] },
+      { role: "assistant", content: "done", tool_calls: nil }
+    ]
+    echo_tool = Class.new(Ezclaw::Tool) do
+      desc "Echo text"
+      param :text, type: :string, required: true
+      def call(text:); text; end
+    end
+    @registry.register("echo", echo_tool)
+
+    @processor.process(user_message: "Echo")
+
+    assert_match(/\[tool\] echo -> \[6 bytes\] héllo$/, @log_output.string)
   end
 
   def test_includes_conversation_history

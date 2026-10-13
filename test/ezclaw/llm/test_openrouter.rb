@@ -33,6 +33,52 @@ class TestOpenRouter < Minitest::Test
     assert_nil result[:tool_calls]
   end
 
+  def test_parses_diagnostic_fields
+    stub_request(:post, "https://openrouter.ai/api/v1/chat/completions")
+      .to_return(
+        status: 200,
+        body: JSON.generate({
+          id: "gen-abc123",
+          choices: [{
+            finish_reason: "length",
+            message: { role: "assistant", content: "", reasoning: "x" * 4200 }
+          }],
+          usage: {
+            prompt_tokens: 54916, completion_tokens: 8192,
+            prompt_tokens_details: { cached_tokens: 52000 },
+            completion_tokens_details: { reasoning_tokens: 8100 }
+          }
+        }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    result = @adapter.chat(messages: [{ role: "user", content: "Hi" }])
+
+    assert_equal({ input: 54916, output: 8192, cached: 52000, reasoning: 8100 }, result[:usage])
+    assert_equal "length", result[:finish_reason]
+    assert_equal "gen-abc123", result[:id]
+    assert_equal 4200, result[:reasoning_chars]
+  end
+
+  def test_diagnostic_fields_are_nil_when_absent
+    stub_request(:post, "https://openrouter.ai/api/v1/chat/completions")
+      .to_return(
+        status: 200,
+        body: JSON.generate({
+          choices: [{ message: { role: "assistant", content: "ok" } }],
+          usage: { prompt_tokens: 1, completion_tokens: 1 }
+        }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    result = @adapter.chat(messages: [{ role: "user", content: "Hi" }])
+
+    assert_equal({ input: 1, output: 1, cached: nil, reasoning: nil }, result[:usage])
+    assert_nil result[:finish_reason]
+    assert_nil result[:id]
+    assert_nil result[:reasoning_chars]
+  end
+
   def test_chat_with_tool_calls
     stub_request(:post, "https://openrouter.ai/api/v1/chat/completions")
       .to_return(

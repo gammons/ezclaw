@@ -35,11 +35,11 @@ module Ezclaw
         on_status&.call("Thinking...")
         @logger.info("llm", "Request to #{source} | tools=#{tools.length}")
 
+        started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         response = @llm.chat(messages: messages, tools: tools, interactive: interactive)
+        elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
 
-        if response[:usage]
-          @logger.info("llm", "Usage: in=#{response[:usage][:input]} out=#{response[:usage][:output]}")
-        end
+        @logger.info("llm", usage_line(response, elapsed)) if response[:usage]
 
         if response[:tool_calls].nil? || response[:tool_calls].empty?
           @logger.info("llm", "Response: text")
@@ -59,8 +59,8 @@ module Ezclaw
           on_status&.call("Running tool: #{tc[:name]}")
           @logger.info("tool", "#{tc[:name]}(#{tc[:arguments].inspect})")
           result = @registry.execute(tc[:name], tc[:arguments])
-          @logger.info("tool", "#{tc[:name]} -> #{result.to_s[0..200]}")
           result_str = result.to_s.encode("UTF-8", invalid: :replace, undef: :replace, replace: "")
+          @logger.info("tool", "#{tc[:name]} -> [#{result_str.bytesize} bytes] #{result_str[0..200]}")
           messages << { role: "tool", tool_call_id: tc[:id], content: result_str }
         end
 
@@ -69,6 +69,25 @@ module Ezclaw
     end
 
     private
+
+    # Fields an adapter doesn't report (nil) are omitted. in=/out= stay first
+    # so existing log greps keep matching.
+    def usage_line(response, elapsed)
+      usage = response[:usage]
+      fields = [
+        ["in", usage[:input]],
+        ["cached", usage[:cached]],
+        ["out", usage[:output]],
+        ["reasoning", usage[:reasoning]],
+        ["reasoning_text", response[:reasoning_chars]],
+        ["text", response[:content].to_s.length],
+        ["finish", response[:finish_reason]]
+      ]
+      parts = fields.reject { |_, v| v.nil? }.map { |k, v| "#{k}=#{v}" }
+      parts << format("%.1fs", elapsed)
+      parts << "id=#{response[:id]}" if response[:id]
+      "Usage: #{parts.join(' ')}"
+    end
 
     # The tool budget ran out mid-investigation. Give the model one final
     # no-tools call to turn whatever it found into an answer, instead of
