@@ -304,13 +304,18 @@ module Ezclaw
         images = img_files.map { |f| download_image(f) }.compact
 
         begin
-          result = @processor.process(
-            user_message: clean_text,
-            conversation_history: history,
-            images: images,
-            source: "slack",
-            on_status: status_cb
-          )
+          result = SlackContext.with(
+            channel: channel_id, thread_ts: thread_ts, message_ts: message_ts,
+            user: event["user"], is_dm: is_dm
+          ) do
+            @processor.process(
+              user_message: clean_text,
+              conversation_history: history,
+              images: images,
+              source: "slack",
+              on_status: status_cb
+            )
+          end
 
           remove_reaction("eyes", channel_id, message_ts)
 
