@@ -148,8 +148,10 @@ module Ezclaw
 
       def parse_response(body)
         msg = body.is_a?(String) ? JSON.parse(body) : body
-        choice = msg["choices"]&.first&.fetch("message", {})
+        first_choice = msg["choices"]&.first || {}
+        choice = first_choice.fetch("message", {})
         usage = msg["usage"] || {}
+        reasoning = choice["reasoning"]
 
         tool_calls = nil
         if choice["tool_calls"]&.any?
@@ -166,7 +168,15 @@ module Ezclaw
           role: "assistant",
           content: choice["content"],
           tool_calls: tool_calls,
-          usage: { input: usage["prompt_tokens"], output: usage["completion_tokens"] }
+          usage: {
+            input: usage["prompt_tokens"],
+            output: usage["completion_tokens"],
+            cached: usage.dig("prompt_tokens_details", "cached_tokens"),
+            reasoning: usage.dig("completion_tokens_details", "reasoning_tokens")
+          },
+          finish_reason: first_choice["finish_reason"],
+          id: msg["id"],
+          reasoning_chars: reasoning.is_a?(String) ? reasoning.length : nil
         }
       end
     end
