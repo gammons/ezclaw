@@ -411,4 +411,27 @@ class TestSlackListener < Minitest::Test
     assert_match(/Message from U0HUMAN/, @output.string,
                  "Expected non-mentioning `message` event to be processed.")
   end
+
+  # --- SlackContext: tools can see which Slack message triggered them ---
+
+  def test_processor_runs_inside_slack_context_for_the_triggering_message
+    listener = build_channel_listener
+    queue = Queue.new
+    processor = Object.new
+    processor.define_singleton_method(:process) do |**|
+      queue.push(Ezclaw::SlackContext.current)
+      { content: "" }
+    end
+    listener.instance_variable_set(:@processor, processor)
+
+    listener.send(:handle_event, channel_app_mention_event)
+
+    ctx = nil
+    Timeout.timeout(3) { ctx = queue.pop }
+    assert_equal(
+      { channel: CHANNEL_ID, thread_ts: "1700000000.000100", message_ts: "1700000000.000100",
+        user: "U0HUMAN", is_dm: false },
+      ctx
+    )
+  end
 end

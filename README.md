@@ -123,6 +123,19 @@ end
 
 Tools are auto-discovered from the `tools/` directory. Any class inheriting from `Ezclaw::Tool` is registered automatically.
 
+#### Knowing which Slack message triggered a tool
+
+While a bot handles a Slack message, tools can read `Ezclaw::SlackContext.current`:
+
+```ruby
+ctx = Ezclaw::SlackContext.current
+# => { channel: "C123", thread_ts: "1700000000.000100",
+#      message_ts: "1700000000.000200", user: "U456", is_dm: false }
+```
+
+It is `nil` during scheduled (cron/heartbeat) runs and in the REPL. Prefer it
+over asking the LLM to copy channel, thread, or user IDs into tool arguments.
+
 ## Built-in tools
 
 Every bot gets these tools automatically:
