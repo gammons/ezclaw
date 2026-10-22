@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "fileutils"
+require "tmpdir"
 
 module Ezclaw
   class Bot
@@ -11,6 +12,7 @@ module Ezclaw
       @data_dir = data_dir || ENV.fetch("EZCLAW_DATA_DIR", File.join(bot_dir, "data"))
 
       FileUtils.mkdir_p(@data_dir)
+      FileUtils.mkdir_p(File.join(@data_dir, "outputs"))
 
       @logger = Log.new(level: @config.log_level)
       @logger.info("bot", "Loading bot: #{@config.name}")
@@ -88,6 +90,8 @@ module Ezclaw
       Tools::UpdateMemoryTool.memory = @memory
       registry.register("update_memory", Tools::UpdateMemoryTool)
       registry.register("slack_post", Tools::SlackPostTool)
+      Tools::SlackUploadFileTool.allowed_roots = [File.join(@data_dir, "outputs"), Dir.tmpdir]
+      registry.register("slack_upload_file", Tools::SlackUploadFileTool)
       registry.register("web_fetch", Tools::WebFetchTool)
       registry.register("shell_exec", Tools::ShellExecTool)
 
@@ -101,6 +105,7 @@ module Ezclaw
     def run_repl
       @logger.info("bot", "Starting in REPL mode")
       Tools::SlackPostTool.repl_mode = true
+      Tools::SlackUploadFileTool.repl_mode = true
 
       repl = REPL.new(
         processor: @processor,
@@ -136,10 +141,13 @@ module Ezclaw
         )
         Tools::SlackPostTool.slack_client = slack.web_client
         Tools::SlackPostTool.repl_mode = false
+        Tools::SlackUploadFileTool.slack_client = slack.web_client
+        Tools::SlackUploadFileTool.repl_mode = false
         slack.start
       else
         @logger.warn("bot", "SLACK_BOT_TOKEN/SLACK_APP_TOKEN not set, Slack disabled")
         Tools::SlackPostTool.repl_mode = true
+        Tools::SlackUploadFileTool.repl_mode = true
       end
 
       scheduler = Scheduler.new(processor: @processor, schedule: @config.schedule, logger: @logger, config: @config)
