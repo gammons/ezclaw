@@ -133,7 +133,9 @@ ctx = Ezclaw::SlackContext.current
 #      message_ts: "1700000000.000200", user: "U456", is_dm: false }
 ```
 
-It is `nil` during scheduled (cron/heartbeat) runs and in the REPL. Prefer it
+It is `nil` during scheduled (cron/heartbeat) runs. In the REPL it has
+`channel: nil` and a per-session `thread_ts`, so per-thread tool state works
+there too; check `channel` before doing anything Slack-specific. Prefer it
 over asking the LLM to copy channel, thread, or user IDs into tool arguments.
 
 ## Built-in tools
