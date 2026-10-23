@@ -5,7 +5,8 @@ module Ezclaw
   # tell which channel/thread/user triggered them without the LLM copying
   # IDs into tool arguments. Set by SlackListener around
   # MessageProcessor#process (tool calls run synchronously on that same
-  # Ruby thread). nil during cron/heartbeat runs and in the REPL.
+  # Ruby thread). nil during cron/heartbeat runs. In the REPL it is a
+  # per-session context with channel: nil (one session = one thread).
   module SlackContext
     KEY = :ezclaw_slack_context
 

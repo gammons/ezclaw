@@ -133,7 +133,9 @@ ctx = Ezclaw::SlackContext.current
 #      message_ts: "1700000000.000200", user: "U456", is_dm: false }
 ```
 
-It is `nil` during scheduled (cron/heartbeat) runs and in the REPL. Prefer it
+It is `nil` during scheduled (cron/heartbeat) runs. In the REPL it has
+`channel: nil` and a per-session `thread_ts`, so per-thread tool state works
+there too; check `channel` before doing anything Slack-specific. Prefer it
 over asking the LLM to copy channel, thread, or user IDs into tool arguments.
 
 ## Built-in tools
@@ -144,6 +146,7 @@ Every bot gets these tools automatically:
 |------|-------------|
 | `update_memory` | Update the bot's persistent memory.md file |
 | `slack_post` | Post a message to a Slack channel |
+| `slack_upload_file` | Upload a file into the current Slack thread (only that thread; files under `<data>/outputs` or the temp dir, ≤ 20 MB) |
 | `web_fetch` | Fetch a URL (GET/POST, follows redirects, custom headers) |
 | `shell_exec` | Execute a shell command (with timeout and output capture) |
 
@@ -385,6 +388,7 @@ lib/
     tools/
       update_memory.rb    # Built-in: update memory file
       slack_post.rb       # Built-in: post to Slack
+      slack_upload_file.rb # Built-in: upload a file into the current thread
       web_fetch.rb        # Built-in: HTTP requests
       shell_exec.rb       # Built-in: shell command execution
 helm/ezclaw/           # Minimal Helm chart
